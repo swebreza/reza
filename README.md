@@ -57,6 +57,149 @@ reza watch &         # optional: real-time file sync
 
 ---
 
+## Install as an AI CLI Skill
+
+Install reza once into your AI tool so it auto-activates on every project — no manual setup per session.
+
+### Claude Code
+
+Installs `/reza` as a slash command. Type `/reza` in any Claude Code session to instantly load your project context.
+
+**One-line install:**
+
+```bash
+mkdir -p ~/.claude/skills/reza && curl -fsSL \
+  https://raw.githubusercontent.com/swebreza/reza/main/integrations/claude-code/SKILL.md \
+  -o ~/.claude/skills/reza/SKILL.md
+```
+
+**Or manually:**
+
+```bash
+mkdir -p ~/.claude/skills/reza
+cp integrations/claude-code/SKILL.md ~/.claude/skills/reza/SKILL.md
+```
+
+Restart Claude Code, then type `/` — you'll see **reza** in the skill list.
+
+It also **auto-triggers** whenever you say:
+- "pick up where I left off"
+- "what is this project"
+- "continue from last session"
+- "what was I working on"
+
+---
+
+### Cursor
+
+Copy the `.cursorrules` file into your project root:
+
+```bash
+cp integrations/cursor/.cursorrules your-project/.cursorrules
+```
+
+Or add globally to `~/.cursor/rules/reza.mdc`:
+
+```bash
+mkdir -p ~/.cursor/rules
+cp integrations/cursor/.cursorrules ~/.cursor/rules/reza.mdc
+```
+
+Cursor will now prompt reza queries automatically at session start.
+
+---
+
+### Kilocode
+
+```bash
+# Copy into your project:
+cp integrations/kilocode/rules.md your-project/.kilocode/reza.md
+
+# Or add globally to Kilocode's rules directory:
+cp integrations/kilocode/rules.md ~/.kilocode/rules/reza.md
+```
+
+---
+
+### Aider
+
+```bash
+# Add to your project's .aider.conf.yml:
+echo "read:" >> .aider.conf.yml
+echo "  - .reza/CONTEXT.md" >> .aider.conf.yml
+
+# Generate the context file before each session:
+reza export
+
+# Then just run aider normally — context is always included:
+aider
+```
+
+Or pass it inline per session:
+
+```bash
+reza export && aider --read .reza/CONTEXT.md
+```
+
+---
+
+### GitHub Copilot
+
+```bash
+# Creates .github/copilot-instructions.md (Copilot reads this automatically):
+mkdir -p .github
+cp integrations/github-copilot/README.md .github/copilot-instructions.md
+```
+
+Then in Copilot Chat, reference the exported context:
+
+```
+#file:.reza/CONTEXT.md  what files handle authentication?
+```
+
+---
+
+### Continue.dev
+
+```bash
+# Generate context file:
+reza export
+
+# Reference in chat:
+@.reza/CONTEXT.md
+```
+
+Or add to `~/.continue/config.json` to auto-include on every session — see [integrations/continue/README.md](integrations/continue/README.md).
+
+---
+
+### Codeium / Windsurf
+
+```bash
+reza export --format context   # generates .reza/CONTEXT.md
+```
+
+In Windsurf Cascade:
+```
+@.reza/CONTEXT.md
+```
+
+In Codeium: keep `.reza/CONTEXT.md` open in an editor tab — Codeium reads open files.
+
+---
+
+### OpenAI Codex CLI
+
+```bash
+# Create a shell alias that auto-injects reza context:
+alias codex-reza='reza export --format context -o /tmp/.reza_ctx.md && codex --system-prompt "$(cat /tmp/.reza_ctx.md)"'
+
+# Use it:
+codex-reza "find the authentication middleware"
+```
+
+---
+
 ## Measured Token Savings
 
 Tested on a real 1,710-file monorepo (Django + 2× FastAPI + 4× React):
@@ -67,7 +210,7 @@ Tested on a real 1,710-file monorepo (Django + 2× FastAPI + 4× React):
 | Cross-LLM handoff | ~10,000 tokens | ~1,250 tokens | **88%** |
 | Find a specific file | ~7,200 tokens | ~450 tokens | **94%** |
 
-**At 500 sessions/month on Claude Sonnet: ~$14/month saved in API costs.**  
+**At 500 sessions/month on Claude Sonnet: ~$14/month saved in API costs.**
 More importantly: **58+ hours of developer wait time returned.**
 
 ---
@@ -138,23 +281,23 @@ reza hooks --uninstall        # Remove the hook
 
 reza works with every major AI coding tool.
 
-| Tool | Method | Guide |
-|------|--------|-------|
-| **Claude Code** | Native skill — auto-triggered | [integrations/claude-code/](integrations/claude-code/SKILL.md) |
-| **Cursor** | `.cursorrules` | [integrations/cursor/](integrations/cursor/.cursorrules) |
-| **Kilocode** | Rules file | [integrations/kilocode/](integrations/kilocode/rules.md) |
-| **Aider** | `--read .reza/CONTEXT.md` | [integrations/aider/](integrations/aider/README.md) |
-| **Continue.dev** | `@file` / config.json | [integrations/continue/](integrations/continue/README.md) |
-| **GitHub Copilot** | `#file` / copilot-instructions.md | [integrations/github-copilot/](integrations/github-copilot/README.md) |
-| **Codeium / Windsurf** | Context file | [integrations/codeium/](integrations/codeium/README.md) |
-| **OpenAI Codex** | System prompt | [integrations/codex/](integrations/codex/README.md) |
-| **Any other tool** | `reza export` → paste output | See below |
+| Tool | Skill Install | Per-Project Setup | Guide |
+|------|--------------|-------------------|-------|
+| **Claude Code** | `curl` into `~/.claude/skills/reza/` | `reza init` | [→](integrations/claude-code/SKILL.md) |
+| **Cursor** | Copy `.cursorrules` globally | `reza init` | [→](integrations/cursor/.cursorrules) |
+| **Kilocode** | Copy `rules.md` to `~/.kilocode/rules/` | `reza init` | [→](integrations/kilocode/rules.md) |
+| **Aider** | Add to `.aider.conf.yml` | `reza export` | [→](integrations/aider/README.md) |
+| **Continue.dev** | Edit `~/.continue/config.json` | `reza export` | [→](integrations/continue/README.md) |
+| **GitHub Copilot** | Copy to `.github/copilot-instructions.md` | `reza export` | [→](integrations/github-copilot/README.md) |
+| **Codeium / Windsurf** | Open context file in editor | `reza export` | [→](integrations/codeium/README.md) |
+| **OpenAI Codex** | Shell alias with `--system-prompt` | `reza export` | [→](integrations/codex/README.md) |
+| **Any other tool** | `reza export` → paste output | `reza export` | — |
 
 ### Universal approach (works with any tool)
 
 ```bash
 reza export --format context
-# Copy .reza/CONTEXT.md into your tool's context window
+# Paste .reza/CONTEXT.md content into your tool's context window
 ```
 
 ---
@@ -231,7 +374,7 @@ pip install reza
 ### From source
 
 ```bash
-git clone https://github.com/suwebreza/reza
+git clone https://github.com/swebreza/reza
 cd reza
 pip install -e .
 ```
@@ -315,7 +458,7 @@ reza init --dir /path/to/project
 ## Real-World Example
 
 ```bash
-# Day 1: Start with Claude
+# Day 1: Start with Claude Code
 cd my-saas-project
 reza init
 # → Indexed 847 files in 8.2 seconds
@@ -362,6 +505,6 @@ MIT — see [LICENSE](LICENSE).
 
 ## Author
 
-Built by [Suweb Reza](https://github.com/suwebreza).
+Built by [Suweb Reza](https://github.com/swebreza).
 
 If reza saves you time, star the repo and tell your team.
