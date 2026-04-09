@@ -69,6 +69,6 @@ Thumbs.db
 *.tar.gz
 *.whl
 
-# reza self-context (optional — most users should NOT commit their .reza dir)
-# Uncomment the line below to ignore reza context in this repo:
-# .reza/
+# reza self-context
+# The reza project itself doesn't commit its own context DB
+.reza/
