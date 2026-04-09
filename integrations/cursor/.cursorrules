@@ -1,0 +1,77 @@
+# reza — Universal LLM Context Database
+# Add this to your .cursorrules file to give Cursor instant project awareness.
+
+## Context Database
+
+This project uses **reza** — a local SQLite context database at `.reza/context.db`.
+
+### MANDATORY: Start every session by running:
+
+```bash
+reza query
+```
+
+This gives you the complete project structure, framework, active sessions, and
+file purposes — without reading any source files.
+
+### Before searching for a file, run:
+
+```bash
+reza query --find "keyword"
+```
+
+Example:
+```bash
+reza query --find "authentication"
+reza query --find "payment"
+reza query --find "api routes"
+```
+
+### Check for work from other AI tools:
+
+```bash
+reza session handoff
+```
+
+This shows any interrupted sessions from Claude, Codex, Aider, or any other LLM.
+Read the `context` field before making changes — it contains key decisions and
+things that were tried and failed.
+
+### Track your session:
+
+```bash
+# Start:
+reza session start --llm cursor --task "what you are doing"
+
+# Save progress:
+reza session save --id cursor-XXXXXXXX \
+  --summary "what was done" \
+  --context "decisions made, what is next" \
+  --files "files,you,changed"
+
+# End:
+reza session end --id cursor-XXXXXXXX
+```
+
+### Export context for Cursor's @file:
+
+```bash
+reza export --format context
+```
+
+Then reference it in Cursor: `@.reza/CONTEXT.md`
+
+### Rules for using reza:
+
+1. Always run `reza query` before opening files
+2. Always run `reza session handoff` at the start of a session
+3. Use `reza query --find` instead of searching manually
+4. Save session progress before stopping work
+5. Use `reza export` to generate a context file for @-mentions
+
+### Project info:
+
+```bash
+reza status     # quick overview
+reza query      # full context
+```
