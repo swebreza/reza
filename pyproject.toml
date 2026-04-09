@@ -9,7 +9,7 @@ description = "Universal LLM context database — instant project awareness for 
 authors = [
     {name = "Suweb Reza"}
 ]
-license = {text = "MIT"}
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.8"
 keywords = [
@@ -20,7 +20,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
@@ -49,10 +48,10 @@ dev = [
 reza = "reza.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/suwebreza/reza"
-Repository = "https://github.com/suwebreza/reza"
-Issues = "https://github.com/suwebreza/reza/issues"
-Changelog = "https://github.com/suwebreza/reza/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/swebreza/reza"
+Repository = "https://github.com/swebreza/reza"
+Issues = "https://github.com/swebreza/reza/issues"
+Changelog = "https://github.com/swebreza/reza/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]

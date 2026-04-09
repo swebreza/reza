@@ -4,7 +4,6 @@
 
 Index your project once. Never re-explain it again.
 
-[![PyPI version](https://img.shields.io/pypi/v/reza.svg)](https://pypi.org/project/reza/)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Works with](https://img.shields.io/badge/works%20with-Claude%20%7C%20Cursor%20%7C%20Codex%20%7C%20Aider%20%7C%20Kilocode-green.svg)](#integrations)
@@ -42,7 +41,10 @@ Any AI tool can query this database instead of scanning your files.
 ## Quick Start
 
 ```bash
-pip install reza
+git clone https://github.com/swebreza/reza
+cd reza
+pip install -e .
+
 cd your-project
 reza init
 ```
@@ -365,12 +367,6 @@ Your project
 
 ## Installation
 
-### From PyPI (recommended)
-
-```bash
-pip install reza
-```
-
 ### From source
 
 ```bash
@@ -386,7 +382,7 @@ pip install -e .
 - `rich` — terminal output
 - `watchdog` — file watching (only needed for `reza watch`)
 
-All dependencies install automatically with `pip install reza`.
+All dependencies install automatically with `pip install -e .`.
 
 ---
 
