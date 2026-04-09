@@ -5,7 +5,11 @@ reza works with Aider via `--read` to inject project context into every session.
 ## Setup
 
 ```bash
-pip install reza
+# Install reza from GitHub source once:
+git clone https://github.com/swebreza/reza
+cd reza
+pip install -e .
+
 cd your-project
 reza init
 ```

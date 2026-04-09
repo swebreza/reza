@@ -5,7 +5,11 @@ Use reza with GitHub Copilot Chat to give it instant project awareness.
 ## Setup
 
 ```bash
-pip install reza
+# Install reza from GitHub source once:
+git clone https://github.com/swebreza/reza
+cd reza
+pip install -e .
+
 cd your-project
 reza init
 reza export --format context   # generates .reza/CONTEXT.md

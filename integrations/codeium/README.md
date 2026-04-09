@@ -5,7 +5,11 @@ Use reza with Codeium (IDE extension) and Windsurf (AI-powered IDE) for instant 
 ## Setup
 
 ```bash
-pip install reza
+# Install reza from GitHub source once:
+git clone https://github.com/swebreza/reza
+cd reza
+pip install -e .
+
 cd your-project
 reza init
 reza export --format context   # generates .reza/CONTEXT.md

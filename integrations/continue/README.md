@@ -5,7 +5,11 @@ Use reza with Continue (VS Code / JetBrains extension) to give it permanent proj
 ## Setup
 
 ```bash
-pip install reza
+# Install reza from GitHub source once:
+git clone https://github.com/swebreza/reza
+cd reza
+pip install -e .
+
 cd your-project
 reza init
 reza export --format context   # generates .reza/CONTEXT.md
