@@ -4,7 +4,10 @@
 
 Index your project once. Never re-explain it again.
 
+[![PyPI version](https://img.shields.io/pypi/v/reza.svg)](https://pypi.org/project/reza/)
+[![npm version](https://img.shields.io/npm/v/reza.svg)](https://www.npmjs.com/package/reza)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Node 14+](https://img.shields.io/badge/node-14+-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Works with](https://img.shields.io/badge/works%20with-Claude%20%7C%20Cursor%20%7C%20Codex%20%7C%20Aider%20%7C%20Kilocode-green.svg)](#integrations)
 
@@ -41,10 +44,13 @@ Any AI tool can query this database instead of scanning your files.
 ## Quick Start
 
 ```bash
-git clone https://github.com/swebreza/reza
-cd reza
-pip install -e .
+# via npm (JS / Node ecosystem):
+npm install -g reza
 
+# via pip (Python ecosystem):
+pip install reza
+
+# then in any project:
 cd your-project
 reza init
 ```
@@ -443,6 +449,27 @@ Your project
 
 ## Installation
 
+### via npm (recommended for JS/Node developers)
+
+```bash
+npm install -g reza
+```
+
+Automatically installs the Python backend via pip. Requires **Python 3.8+**.
+
+### via pip (recommended for Python developers)
+
+```bash
+pip install reza
+```
+
+### via npx (no global install)
+
+```bash
+npx reza init
+npx reza query
+```
+
 ### From source
 
 ```bash
@@ -453,12 +480,14 @@ pip install -e .
 
 ### Requirements
 
-- Python 3.8+
-- `click` — CLI framework
-- `rich` — terminal output
-- `watchdog` — file watching (only needed for `reza watch`)
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Python | 3.8+ | Core runtime — always required |
+| pip | any | For `pip install reza` |
+| Node.js | 14+ | Only if installing via npm |
+| watchdog | 3.0+ | Only for `reza watch` (auto-installed) |
 
-All dependencies install automatically with `pip install -e .`.
+All Python dependencies install automatically.
 
 ---
 

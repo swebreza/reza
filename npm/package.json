@@ -1,0 +1,35 @@
+{
+  "name": "reza",
+  "version": "0.1.0",
+  "description": "Universal LLM Context Database — instant project awareness for Claude, Cursor, Codex, Aider, Kilocode and any AI coding tool",
+  "keywords": [
+    "llm", "context", "claude", "codex", "cursor", "aider", "kilocode",
+    "ai-tools", "developer-tools", "sqlite", "project-awareness", "session",
+    "cli", "parallel-agents"
+  ],
+  "homepage": "https://github.com/swebreza/reza",
+  "bugs": {
+    "url": "https://github.com/swebreza/reza/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/swebreza/reza.git"
+  },
+  "license": "MIT",
+  "author": "Suweb Reza",
+  "bin": {
+    "reza": "./bin/reza.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": ["darwin", "linux", "win32"]
+}

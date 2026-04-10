@@ -1,0 +1,4 @@
+# Ignore everything not explicitly included via "files" in package.json
+node_modules/
+*.log
+.DS_Store
