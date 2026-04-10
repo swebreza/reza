@@ -94,9 +94,10 @@ CREATE TABLE IF NOT EXISTS conversation_turns (
     session_id  TEXT NOT NULL,
     role        TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
     content     TEXT NOT NULL,
-    token_est   INTEGER DEFAULT 0,
+    token_est   INTEGER NOT NULL DEFAULT 0,
     turn_index  INTEGER NOT NULL,
     recorded_at TEXT DEFAULT (datetime('now')),
+    UNIQUE (session_id, turn_index),
     FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
