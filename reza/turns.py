@@ -1,7 +1,7 @@
 """Conversation turn storage and budget-aware retrieval."""
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from .schema import get_connection
 
@@ -18,6 +18,7 @@ def add_turn(
 
     Raises ValueError for invalid role or unknown session_id.
     Auto-estimates token_est as len(content)//4 when token_est is 0.
+    Caller is responsible for supplying a unique turn_index; use add_turns_bulk to auto-assign.
     """
     if role not in ("user", "assistant", "system"):
         raise ValueError(f"Invalid role: {role!r}. Must be user, assistant, or system.")
@@ -57,6 +58,10 @@ def add_turns_bulk(db: Path, session_id: str, turns: List[Dict]) -> int:
         next_idx = max_idx + 1
         for i, turn in enumerate(turns):
             role = turn["role"]
+            if role not in ("user", "assistant", "system"):
+                raise ValueError(
+                    f"Invalid role at index {i}: {role!r}. Must be user, assistant, or system."
+                )
             content = turn["content"]
             token_est = turn.get("token_est") or (len(content) // 4)
             conn.execute(
@@ -82,7 +87,7 @@ def list_turns(db: Path, session_id: str) -> List[Dict]:
 def turns_within_budget(db: Path, session_id: str, budget_tokens: int) -> List[Dict]:
     """Return the most-recent turns whose cumulative token_est fits within budget_tokens.
 
-    Oldest turns are dropped first. Result is returned in chronological order.
+    Fills from the most-recent turn backward; stops as soon as a turn would exceed the budget, even if older turns would fit individually. Result is returned in chronological order.
     """
     all_turns = list_turns(db, session_id)
     if not all_turns:
