@@ -270,6 +270,36 @@ reza export --format context         # compact format optimized for LLM prompts
 reza export -o /path/to/output.md    # custom output path
 ```
 
+### Parallel agents — file locks & conflict detection
+
+When two AI tools work on the same repo at the same time, reza prevents silent overwrites.
+
+```bash
+# Claim a file before editing (prevents other agents from touching it)
+reza claim src/auth.py --session claude-abc12345
+
+# See all active locks across all agents
+reza locks
+reza locks --session cursor-xyz789   # filter by session
+
+# Release a lock when done
+reza release src/auth.py --session claude-abc12345
+reza release --all-session claude-abc12345   # release all at once
+
+# View all open conflicts
+reza conflicts
+reza conflicts --all                          # include resolved
+
+# Resolve conflicts
+reza conflicts --resolve 3                    # by ID
+reza conflicts --resolve-file src/auth.py     # all conflicts on one file
+```
+
+Conflicts are also detected **automatically**:
+- `reza watch` prints a stderr alert the moment a locked file is written by a different session
+- The git pre-commit hook checks staged files against active locks on every commit
+- `reza session end` auto-releases all locks for that session — no dangling locks
+
 ### Git hooks
 
 ```bash
@@ -300,6 +330,51 @@ reza works with every major AI coding tool.
 ```bash
 reza export --format context
 # Paste .reza/CONTEXT.md content into your tool's context window
+```
+
+---
+
+## Parallel Agents — Running Claude + Cursor Simultaneously
+
+reza makes it safe to run multiple AI tools on the same repo at the same time.
+
+```
+Claude (terminal 1)              Cursor (editor)
+        │                               │
+reza session start                reza session start
+--llm claude                      --llm cursor
+        │                               │
+reza claim src/auth.py            reza claim src/auth.py
+--session claude-abc123           --session cursor-xyz789
+        │                               │
+  ✅ GRANTED                       ❌ CONFLICT — file locked by claude
+                                   Alert printed to stderr immediately
+                                   Logged to conflicts table
+```
+
+**Typical parallel workflow:**
+
+```bash
+# Terminal 1 — Claude works on backend
+reza session start --llm claude --task "auth backend"
+reza claim src/auth.py --session claude-abc123
+reza claim src/models.py --session claude-abc123
+# ... Claude edits auth.py and models.py ...
+
+# Terminal 2 — Cursor works on frontend simultaneously
+reza session start --llm cursor --task "login UI"
+reza claim src/components/Login.jsx --session cursor-xyz789
+# ... Cursor edits Login.jsx (no conflict) ...
+
+# Cursor tries to touch a locked file:
+reza claim src/auth.py --session cursor-xyz789
+# → CONFLICT: auth.py is locked by claude (claude-abc123)
+
+# Claude finishes and releases
+reza session end --id claude-abc123   # auto-releases all locks
+
+# Now Cursor can claim it safely
+reza claim src/auth.py --session cursor-xyz789   # ✅ granted
 ```
 
 ---
@@ -346,7 +421,7 @@ Your project
         └── pre-commit       ← Auto-updates DB on every commit
 ```
 
-**Database schema (6 tables):**
+**Database schema (7 tables):**
 
 | Table | What it stores |
 |-------|---------------|
@@ -354,8 +429,9 @@ Your project
 | `files` | All files with path, type, line count, purpose |
 | `sessions` | LLM sessions with progress and context |
 | `changes` | Real-time change log linked to sessions |
+| `file_locks` | Active file locks — which session owns which file |
+| `conflicts` | Conflict history — when two agents touched the same locked file |
 | `dependencies` | File import relationships |
-| `conflicts` | Simultaneous edit detection |
 
 **Three sync mechanisms:**
 
@@ -453,6 +529,8 @@ reza init --dir /path/to/project
 
 ## Real-World Example
 
+### Sequential handoff (Claude → Cursor)
+
 ```bash
 # Day 1: Start with Claude Code
 cd my-saas-project
@@ -471,10 +549,37 @@ reza session save --id claude-f3a91b2c \
 
 # Day 2: Switch to Cursor for frontend work
 reza session handoff
-# → Shows claude-f3a91b2c with full context
+# → Shows claude-f3a91b2c with full context — zero re-explanation needed
 
 reza session start --llm cursor --task "frontend checkout flow"
-# → Cursor now knows the Stripe setup, deprecations, and next steps
+# → Cursor knows the Stripe setup, deprecations, and exactly what to do next
+```
+
+### Parallel agents (Claude + Aider at the same time)
+
+```bash
+# Both agents initialized on the same repo
+reza watch &   # real-time conflict detection running in background
+
+# Claude takes the API layer
+reza session start --llm claude --task "REST endpoints"
+reza claim src/api/ --session claude-f3a91b2c
+
+# Aider takes the tests simultaneously
+reza session start --llm aider --task "write test suite"
+reza claim tests/ --session aider-8c2d4e1f
+
+# If Aider tries to touch src/api/:
+reza claim src/api/auth.py --session aider-8c2d4e1f
+# → CONFLICT: src/api/auth.py is locked by claude (claude-f3a91b2c)
+# → Conflict logged, alert fired to terminal
+
+# Check all open conflicts:
+reza conflicts
+
+# Claude finishes and releases everything:
+reza session end --id claude-f3a91b2c
+# → All claude locks auto-released — Aider can now claim any file safely
 ```
 
 ---
