@@ -5,7 +5,7 @@
 Index your project once. Never re-explain it again.
 
 [![PyPI version](https://img.shields.io/pypi/v/reza.svg)](https://pypi.org/project/reza/)
-[![npm version](https://img.shields.io/npm/v/reza.svg)](https://www.npmjs.com/package/reza)
+[![npm version](https://img.shields.io/npm/v/@swebreza/reza.svg)](https://www.npmjs.com/package/@swebreza/reza)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Node 14+](https://img.shields.io/badge/node-14+-green.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -45,7 +45,7 @@ Any AI tool can query this database instead of scanning your files.
 
 ```bash
 # via npm (JS / Node ecosystem):
-npm install -g reza
+npm install -g @swebreza/reza
 
 # via pip (Python ecosystem):
 pip install reza
@@ -452,7 +452,7 @@ Your project
 ### via npm (recommended for JS/Node developers)
 
 ```bash
-npm install -g reza
+npm install -g @swebreza/reza
 ```
 
 Automatically installs the Python backend via pip. Requires **Python 3.8+**.
@@ -466,8 +466,8 @@ pip install reza
 ### via npx (no global install)
 
 ```bash
-npx reza init
-npx reza query
+npx @swebreza/reza init
+npx @swebreza/reza query
 ```
 
 ### From source

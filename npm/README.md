@@ -5,7 +5,7 @@
 ## Install
 
 ```bash
-npm install -g reza
+npm install -g @swebreza/reza
 ```
 
 This automatically installs the Python backend via `pip install reza`. Requires **Python 3.8+**.
@@ -56,7 +56,7 @@ py -3 -m pip install reza
 **Skip pip install during CI**
 
 ```bash
-REZA_SKIP_POSTINSTALL=1 npm install -g reza
+REZA_SKIP_POSTINSTALL=1 npm install -g @swebreza/reza
 ```
 
 ## License
