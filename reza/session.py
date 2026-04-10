@@ -58,7 +58,7 @@ def save_session(
 
 
 def end_session(db: Path, session_id: str, summary: str = "") -> bool:
-    """Close a session as completed. Returns True if session was found."""
+    """Close a session as completed and release all file locks. Returns True if found."""
     with get_connection(db) as conn:
         row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
         if not row:
@@ -73,6 +73,8 @@ def end_session(db: Path, session_id: str, summary: str = "") -> bool:
             """,
             (summary, session_id),
         )
+        # Auto-release all file locks held by this session
+        conn.execute("DELETE FROM file_locks WHERE session_id = ?", (session_id,))
     return True
 
 

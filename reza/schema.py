@@ -65,15 +65,29 @@ CREATE TABLE IF NOT EXISTS conflicts (
     file_path   TEXT NOT NULL,
     session_a   TEXT,
     session_b   TEXT,
+    llm_a       TEXT,
+    llm_b       TEXT,
     detected_at TEXT DEFAULT (datetime('now')),
-    resolved    INTEGER DEFAULT 0
+    resolved    INTEGER DEFAULT 0,
+    resolved_at TEXT,
+    resolved_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS file_locks (
+    file_path  TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    llm_name   TEXT,
+    claimed_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_type     ON files(file_type);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_changes_file   ON changes(file_path);
 CREATE INDEX IF NOT EXISTS idx_changes_session ON changes(session_id);
-CREATE INDEX IF NOT EXISTS idx_changes_time   ON changes(changed_at);
+CREATE INDEX IF NOT EXISTS idx_changes_time    ON changes(changed_at);
+CREATE INDEX IF NOT EXISTS idx_conflicts_file  ON conflicts(file_path);
+CREATE INDEX IF NOT EXISTS idx_conflicts_open  ON conflicts(resolved);
 """
 
 

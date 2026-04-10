@@ -1,6 +1,12 @@
-"""Real-time file watcher — syncs file changes to the context database."""
+"""Real-time file watcher — syncs file changes to the context database.
+
+Also performs automatic conflict detection: if a file is modified by a session
+that is NOT the lock owner, a conflict is logged immediately and printed to
+stdout so the watching agent sees it in real time.
+"""
 
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -24,8 +30,29 @@ def _get_session_id(db: Path) -> str:
         return ""
 
 
+def _check_and_log_conflict(db: Path, rel_path: str, writing_session_id: str) -> bool:
+    """Check for a lock conflict and log it. Returns True if conflict found."""
+    if not writing_session_id:
+        return False
+    try:
+        from .claim import check_conflict
+        conflict = check_conflict(db, rel_path, writing_session_id)
+        if conflict:
+            print(
+                f"\n[reza CONFLICT] {rel_path}\n"
+                f"  Locked by : {conflict['lock_owner_llm']} ({conflict['lock_owner']})\n"
+                f"  Written by: {conflict['writing_llm']} ({conflict['writing_session']})\n"
+                f"  Run 'reza conflicts' to see all open conflicts.\n",
+                file=sys.stderr,
+            )
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _upsert_file(db: Path, abs_path: str, project_root: str, change_type: str):
-    """Update or insert a file record and log the change."""
+    """Update or insert a file record, log the change, and check for conflicts."""
     path = Path(abs_path)
     if not is_indexable(path):
         return
@@ -46,6 +73,10 @@ def _upsert_file(db: Path, abs_path: str, project_root: str, change_type: str):
     checksum = file_checksum(abs_path)
     file_type = path.suffix.lower().lstrip(".") or path.name
     session_id = _get_session_id(db)
+
+    # Conflict check before writing
+    if session_id:
+        _check_and_log_conflict(db, rel, session_id)
 
     try:
         with get_connection(db) as conn:

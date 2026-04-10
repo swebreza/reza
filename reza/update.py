@@ -1,6 +1,11 @@
-"""Update individual files in the DB — used by git hooks and CLI."""
+"""Update individual files in the DB — used by git hooks and CLI.
+
+Includes conflict detection: if a staged/written file is locked by a different
+session, a conflict is logged and reported before the update proceeds.
+"""
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -63,6 +68,25 @@ def _active_session(conn) -> Optional[str]:
     return row["id"] if row else None
 
 
+def _check_conflict(db: Path, rel_path: str, session_id: Optional[str], silent: bool):
+    """Run conflict detection for a single file path."""
+    if not session_id:
+        return
+    try:
+        from .claim import check_conflict
+        conflict = check_conflict(db, rel_path, session_id)
+        if conflict and not silent:
+            print(
+                f"\n[reza CONFLICT] {rel_path}\n"
+                f"  Locked by : {conflict['lock_owner_llm']} ({conflict['lock_owner']})\n"
+                f"  Written by: {conflict['writing_llm']} ({conflict['writing_session']})\n"
+                f"  Run 'reza conflicts' to review.\n",
+                file=sys.stderr,
+            )
+    except Exception:
+        pass
+
+
 def update_staged(db: Path, silent: bool = False):
     """Update the DB for all staged files (called from pre-commit hook)."""
     try:
@@ -74,6 +98,7 @@ def update_staged(db: Path, silent: bool = False):
         return
 
     project_root = str(db.parent.parent)
+    conflicts_found = []
 
     with get_connection(db) as conn:
         session_id = _active_session(conn)
@@ -93,6 +118,17 @@ def update_staged(db: Path, silent: bool = False):
                 change_type = "modified"
 
             _upsert(conn, project_root, rel_path, change_type, session_id)
+
+    # Conflict detection runs after the connection is closed (avoids nested conn)
+    if session_id:
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            parts = line.split("\t", 1)
+            if len(parts) < 2:
+                continue
+            rel_path = parts[1].strip()
+            _check_conflict(db, rel_path, session_id, silent)
 
     if not silent:
         print("reza: context DB updated.")
@@ -115,6 +151,8 @@ def update_single_file(db: Path, file_path: str, silent: bool = False):
         session_id = _active_session(conn)
         change_type = "modified" if abs_path.exists() else "deleted"
         _upsert(conn, project_root, rel_path, change_type, session_id)
+
+    _check_conflict(db_path, rel_path, session_id, silent)
 
     if not silent:
         print(f"reza: updated {rel_path}")

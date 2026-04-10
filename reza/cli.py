@@ -584,3 +584,206 @@ def upgrade(ctx, project_dir):
         conn.commit()
     conn.close()
     console.print(f"[green]Upgrade complete.[/green] Indexed {indexed:,} files, skipped {skipped:,}.")
+
+
+# ─────────────────────────────────────────────
+# claim
+# ─────────────────────────────────────────────
+
+@main.command()
+@click.argument("file_path")
+@click.option("--session", "session_id", required=True, help="Session ID claiming this file.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def claim(ctx, file_path, session_id, as_json):
+    """Claim a file for exclusive editing by a session.
+
+    Prevents other agents from silently overwriting your work.
+    A conflict alert fires immediately if another session writes the file.
+
+    \b
+    Examples:
+        reza claim src/auth.py --session claude-abc123
+        reza claim src/models.py --session cursor-xyz789
+    """
+    db = _require_db(ctx)
+    from .claim import claim_file
+
+    result = claim_file(db, file_path, session_id)
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    if result["conflict"]:
+        console.print(
+            f"[bold red]CONFLICT[/bold red] — [cyan]{file_path}[/cyan] is already locked\n"
+            f"  Owner  : [yellow]{result['llm']}[/yellow] ({result['owner']})\n"
+            f"  Run [bold]reza conflicts[/bold] to review all open conflicts."
+        )
+        ctx.exit(1)
+    else:
+        console.print(
+            f"[bold green]Claimed[/bold green] [cyan]{file_path}[/cyan]\n"
+            f"  Session: {session_id}\n"
+            f"  Release with: [bold]reza release {file_path} --session {session_id}[/bold]"
+        )
+
+
+# ─────────────────────────────────────────────
+# release
+# ─────────────────────────────────────────────
+
+@main.command()
+@click.argument("file_path", required=False)
+@click.option("--session", "session_id", default=None, help="Release only locks held by this session.")
+@click.option("--all-session", "all_session", default=None, metavar="SESSION_ID",
+              help="Release ALL locks held by a session.")
+@click.pass_context
+def release(ctx, file_path, session_id, all_session):
+    """Release a file lock (or all locks for a session).
+
+    \b
+    Examples:
+        reza release src/auth.py --session claude-abc123
+        reza release --all-session claude-abc123   # release everything Claude claimed
+    """
+    db = _require_db(ctx)
+    from .claim import release_file, release_session_locks
+
+    if all_session:
+        count = release_session_locks(db, all_session)
+        console.print(f"[green]Released {count} lock(s)[/green] for session [cyan]{all_session}[/cyan].")
+        return
+
+    if not file_path:
+        err_console.print("[red]Provide a file path or use --all-session SESSION_ID[/red]")
+        ctx.exit(1)
+
+    released = release_file(db, file_path, session_id)
+    if released:
+        console.print(f"[green]Released[/green] lock on [cyan]{file_path}[/cyan].")
+    else:
+        console.print(f"[yellow]No lock found[/yellow] for [cyan]{file_path}[/cyan].")
+
+
+# ─────────────────────────────────────────────
+# conflicts
+# ─────────────────────────────────────────────
+
+@main.command()
+@click.option("--all", "show_all", is_flag=True, help="Show resolved conflicts too.")
+@click.option("--resolve", "resolve_id", default=None, type=int,
+              help="Resolve a conflict by its ID.")
+@click.option("--resolve-file", "resolve_file", default=None, metavar="PATH",
+              help="Resolve all open conflicts for a specific file.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def conflicts(ctx, show_all, resolve_id, resolve_file, as_json):
+    """View and resolve parallel-agent file conflicts.
+
+    \b
+    Examples:
+        reza conflicts                      # open conflicts
+        reza conflicts --all                # including resolved
+        reza conflicts --resolve 3          # mark conflict #3 resolved
+        reza conflicts --resolve-file src/auth.py
+        reza conflicts --json
+    """
+    db = _require_db(ctx)
+    from .claim import list_conflicts, resolve_conflict, resolve_file_conflicts
+
+    if resolve_id is not None:
+        ok = resolve_conflict(db, resolve_id, resolved_by="manual")
+        if ok:
+            console.print(f"[green]Conflict #{resolve_id} resolved.[/green]")
+        else:
+            console.print(f"[yellow]Conflict #{resolve_id} not found or already resolved.[/yellow]")
+        return
+
+    if resolve_file:
+        count = resolve_file_conflicts(db, resolve_file, resolved_by="manual")
+        console.print(f"[green]Resolved {count} conflict(s)[/green] for [cyan]{resolve_file}[/cyan].")
+        return
+
+    rows = list_conflicts(db, unresolved_only=not show_all)
+
+    if as_json:
+        click.echo(json.dumps(rows, indent=2))
+        return
+
+    if not rows:
+        console.print("[green]No open conflicts.[/green] All agents are working in harmony.")
+        return
+
+    table = Table(
+        title=f"[bold red]{'All' if show_all else 'Open'} Conflicts[/bold red]",
+        box=box.SIMPLE,
+    )
+    table.add_column("ID", style="dim", width=4)
+    table.add_column("File", style="cyan")
+    table.add_column("Agent A (lock owner)")
+    table.add_column("Agent B (writer)")
+    table.add_column("When", style="dim")
+    table.add_column("Status")
+
+    for r in rows:
+        status = "[green]resolved[/green]" if r["resolved"] else "[red]OPEN[/red]"
+        table.add_row(
+            str(r["id"]),
+            r["file_path"],
+            f"{r['llm_a'] or '?'}\n[dim]{r['session_a'] or ''}[/dim]",
+            f"{r['llm_b'] or '?'}\n[dim]{r['session_b'] or ''}[/dim]",
+            (r["detected_at"] or "")[:16],
+            status,
+        )
+    console.print(table)
+    console.print(
+        f"\nResolve with: [bold]reza conflicts --resolve ID[/bold]  "
+        f"or  [bold]reza conflicts --resolve-file PATH[/bold]"
+    )
+
+
+# ─────────────────────────────────────────────
+# locks
+# ─────────────────────────────────────────────
+
+@main.command()
+@click.option("--session", "session_id", default=None, help="Filter by session ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def locks(ctx, session_id, as_json):
+    """Show all currently claimed file locks.
+
+    \b
+    Examples:
+        reza locks                          # all active locks
+        reza locks --session claude-abc123  # only Claude's locks
+    """
+    db = _require_db(ctx)
+    from .claim import list_locks
+
+    rows = list_locks(db, session_id=session_id)
+
+    if as_json:
+        click.echo(json.dumps(rows, indent=2))
+        return
+
+    if not rows:
+        console.print("[green]No active file locks.[/green]")
+        return
+
+    table = Table(title="Active File Locks", box=box.SIMPLE)
+    table.add_column("File", style="cyan")
+    table.add_column("LLM")
+    table.add_column("Session", style="dim")
+    table.add_column("Claimed at", style="dim")
+
+    for r in rows:
+        table.add_row(
+            r["file_path"],
+            r["llm_name"] or "?",
+            r["session_id"],
+            (r["claimed_at"] or "")[:16],
+        )
+    console.print(table)
