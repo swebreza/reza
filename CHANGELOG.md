@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.0] — 2026-04-11
+
+### Added
+
+- `conversation_turns` table — structured per-turn conversation history linked to sessions (role, content, token_est, turn_index)
+- `handoff_drops` table — tracks ingested file drops to prevent double-import
+- `reza/turns.py` — new module: `add_turn`, `add_turns_bulk`, `list_turns`, `turns_within_budget` (budget-aware retrieval drops oldest turns first)
+- `reza/ingest.py` — new module: parse and ingest `.md` and `.json` transcript files as conversation turns; `reza ingest` file-drop workflow
+- `.reza/handoffs/` directory auto-created on `reza init` and `reza upgrade`
+- `reza upgrade` now runs schema migration so existing installations get new tables without re-init
+- `UNIQUE(session_id, turn_index)` constraint ensures turn ordering integrity
+
+### Changed
+
+- `reza upgrade` applies `init_schema` before re-scanning (idempotent migration)
+
+---
+
 ## [0.1.0] — 2024-04-10
 
 ### Added

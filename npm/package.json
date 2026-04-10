@@ -1,6 +1,6 @@
 {
   "name": "@swebreza/reza",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Universal LLM Context Database — instant project awareness for Claude, Cursor, Codex, Aider, Kilocode and any AI coding tool",
   "keywords": [
     "llm",
