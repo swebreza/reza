@@ -350,6 +350,7 @@ def initialize_project(
     project_dir = str(Path(project_dir).resolve())
     db_path = get_db_path(project_dir)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    (db_path.parent / "handoffs").mkdir(exist_ok=True)
 
     import sqlite3
     conn = sqlite3.connect(str(db_path))

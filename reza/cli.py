@@ -574,11 +574,21 @@ def upgrade(ctx, project_dir):
     """Re-scan all files and refresh the context database."""
     db = _require_db(ctx)
     from .init_db import scan_files
+    from .schema import init_schema
     import sqlite3 as _sqlite3
 
     project_dir = str(Path(project_dir).resolve())
     conn = _sqlite3.connect(str(db))
     conn.row_factory = _sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+
+    # Apply any new schema tables (idempotent)
+    init_schema(conn)
+
+    # Ensure handoffs dir exists
+    db.parent.joinpath("handoffs").mkdir(exist_ok=True)
+
     with console.status("[bold green]Re-scanning files…[/bold green]"):
         indexed, skipped = scan_files(conn, project_dir)
         conn.commit()

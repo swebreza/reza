@@ -88,6 +88,28 @@ CREATE INDEX IF NOT EXISTS idx_changes_session ON changes(session_id);
 CREATE INDEX IF NOT EXISTS idx_changes_time    ON changes(changed_at);
 CREATE INDEX IF NOT EXISTS idx_conflicts_file  ON conflicts(file_path);
 CREATE INDEX IF NOT EXISTS idx_conflicts_open  ON conflicts(resolved);
+
+CREATE TABLE IF NOT EXISTS conversation_turns (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  TEXT NOT NULL,
+    role        TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+    content     TEXT NOT NULL,
+    token_est   INTEGER DEFAULT 0,
+    turn_index  INTEGER NOT NULL,
+    recorded_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS handoff_drops (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path   TEXT UNIQUE NOT NULL,
+    session_id  TEXT,
+    ingested_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_turns_session ON conversation_turns(session_id);
+CREATE INDEX IF NOT EXISTS idx_turns_index   ON conversation_turns(session_id, turn_index);
 """
 
 
