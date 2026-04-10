@@ -72,3 +72,5 @@ Thumbs.db
 # reza self-context
 # The reza project itself doesn't commit its own context DB
 .reza/
+
+.pypirc
