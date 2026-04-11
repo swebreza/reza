@@ -323,6 +323,61 @@ def _print_file_info(info: dict):
     ))
 
 
+def _render_handoff_markdown(s: dict) -> str:
+    """Render a session handoff dict as a markdown string for pasting into any AI tool."""
+    lines = [
+        f"# Session Handoff: {s['id']}",
+        f"**Tool:** {s['llm_name']}  |  **Started:** {s.get('started_at', 'unknown')}  |  **Status:** {s.get('status', 'unknown')}",
+        "",
+        "## What Was Being Done",
+        s.get("working_on") or "(not set)",
+        "",
+        "## Summary",
+        s.get("summary") or s.get("conversation_context") or "(none saved — use reza session save --summary before ending session)",
+        "",
+    ]
+
+    turns = s.get("turns", [])
+    if turns:
+        budget_note = f"~{s['budget_applied']} token budget" if s.get("budget_applied") else "all turns"
+        truncated = s.get("turns_truncated", 0)
+        truncated_note = f", {truncated} oldest dropped" if truncated else ""
+        lines.append(f"## Recent Conversation ({budget_note}{truncated_note})")
+        for turn in turns:
+            lines.append(f"\n**{turn['role']}:** {turn['content']}")
+        lines.append("")
+    else:
+        lines += ["## Recent Conversation", "(no turns saved)", ""]
+
+    search_hits = s.get("search_results", [])
+    if search_hits:
+        lines.append(f"## Relevant Context (search: \"{s.get('search_query', '')}\")")
+        for hit in search_hits:
+            lines.append(f"\n**{hit['role']}** *(turn #{hit['turn_index']})*: {hit['content']}")
+        lines.append("")
+
+    files = s.get("files_modified") or ""
+    lines.append("## Files Modified")
+    file_list = [f.strip() for f in files.split(",") if f.strip()]
+    if file_list:
+        for f in file_list:
+            lines.append(f"- {f}")
+    else:
+        lines.append("(none recorded)")
+    lines.append("")
+
+    lines.append("## Pick Up From Here")
+    if turns:
+        last_assistant = next(
+            (t["content"] for t in reversed(turns) if t["role"] == "assistant"), None
+        )
+        lines.append(last_assistant or "(see last turn above)")
+    else:
+        lines.append(s.get("conversation_context") or "(see summary above)")
+
+    return "\n".join(lines)
+
+
 # ─────────────────────────────────────────────
 # session group
 # ─────────────────────────────────────────────
@@ -399,35 +454,207 @@ def session_list(ctx, status, as_json):
         _print_sessions(sessions)
 
 
-@session.command("handoff")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
-@click.pass_context
-def session_handoff(ctx, as_json):
-    """Show interrupted sessions — perfect for cross-LLM handoffs.
+# ─── session turns ───────────────────────────────────────────────────────────
 
-    Prints the full context of any session that was interrupted,
-    so the next LLM can continue exactly where the last one left off.
+@session.group("turns")
+def session_turns():
+    """Manage conversation turns for a session."""
+
+
+@session_turns.command("add")
+@click.option("--id", "session_id", required=True, help="Session ID to add turns to.")
+@click.option("--role", type=click.Choice(["user", "assistant", "system"]), default=None, help="Role for a single turn.")
+@click.option("--content", default="", help="Content for a single turn.")
+@click.option("--tokens", "token_est", default=0, help="Token estimate (auto-calculated if 0).")
+@click.option("--from-file", "from_file", default=None, help="Path to a JSON array file of turns [{role, content}, ...].")
+@click.pass_context
+def session_turns_add(ctx, session_id, role, content, token_est, from_file):
+    """Add one or more turns to a session.
+
+    \b
+    Single turn:
+        reza session turns add --id claude-abc --role user --content "hello"
+    Bulk from JSON file:
+        reza session turns add --id claude-abc --from-file turns.json
     """
     db = _require_db(ctx)
-    from .session import get_handoff_info
-    sessions = get_handoff_info(db)
+    from .turns import add_turn, add_turns_bulk, list_turns
+
+    if from_file:
+        with open(from_file, encoding="utf-8") as f:
+            turns_data = json.load(f)
+        count = add_turns_bulk(db, session_id, turns_data)
+        console.print(f"[green]Added {count} turns to[/green] [cyan]{session_id}[/cyan]")
+    elif role and content:
+        existing = list_turns(db, session_id)
+        next_idx = (existing[-1]["turn_index"] + 1) if existing else 0
+        add_turn(db, session_id, role, content, token_est=token_est, turn_index=next_idx)
+        console.print(f"[green]Turn added to[/green] [cyan]{session_id}[/cyan]")
+    else:
+        err_console.print("[red]Provide either --role + --content or --from-file[/red]")
+        ctx.exit(1)
+
+
+@session_turns.command("list")
+@click.option("--id", "session_id", required=True, help="Session ID.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def session_turns_list(ctx, session_id, as_json):
+    """List all conversation turns for a session."""
+    db = _require_db(ctx)
+    from .turns import list_turns
+    turns = list_turns(db, session_id)
     if as_json:
-        click.echo(json.dumps(sessions, indent=2))
+        click.echo(json.dumps(turns, indent=2, default=str))
         return
-    if not sessions:
+    if not turns:
+        console.print(f"[dim]No turns for session {session_id}[/dim]")
+        return
+    for t in turns:
+        console.print(
+            f"[bold]{t['role']}[/bold] [dim](#{t['turn_index']}, ~{t['token_est']} tokens)[/dim]"
+        )
+        preview = t["content"][:120]
+        if len(t["content"]) > 120:
+            preview += "..."
+        console.print(f"  {preview}")
+        console.print()
+
+
+@session.command("search")
+@click.argument("query")
+@click.option("--id", "session_id", default=None, help="Restrict search to one session (default: all sessions).")
+@click.option("--limit", default=5, show_default=True, help="Max results to return.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def session_search(ctx, query, session_id, limit, as_json):
+    """Search conversation history by keyword using full-text search.
+
+    \b
+    Examples:
+        reza session search "password reset"
+        reza session search "auth" --id claude-abc123
+        reza session search "database schema" --limit 10
+    """
+    db = _require_db(ctx)
+    from .turns import search_turns
+    results = search_turns(db, query, session_id=session_id, limit=limit)
+    if as_json:
+        click.echo(json.dumps(results, indent=2, default=str))
+        return
+    if not results:
+        console.print(f"[dim]No results for[/dim] [bold]{query!r}[/bold]")
+        return
+    console.print(f"[bold green]{len(results)} result(s)[/bold green] for [bold]{query!r}[/bold]\n")
+    for r in results:
+        console.print(
+            f"[bold]{r['role']}[/bold] [dim]session={r['session_id']} "
+            f"turn=#{r['turn_index']}[/dim]"
+        )
+        preview = r["content"][:200]
+        if len(r["content"]) > 200:
+            preview += "..."
+        console.print(f"  {preview}")
+        console.print()
+
+
+@session.command("handoff")
+@click.option("--id", "session_id", default=None, help="Specific session ID (default: latest interrupted).")
+@click.option("--format", "fmt", default="markdown",
+              type=click.Choice(["markdown", "json"]),
+              show_default=True, help="Output format.")
+@click.option("--budget", "budget_tokens", default=None, type=int,
+              help="Token budget for turns. Oldest dropped first to fit.")
+@click.option("--search", "search_query", default=None,
+              help="Include relevant turns matching this query (FTS, in addition to recent turns).")
+@click.option("--json", "as_json", is_flag=True, hidden=True,
+              help="Deprecated: use --format json instead.")
+@click.pass_context
+def session_handoff(ctx, session_id, fmt, budget_tokens, search_query, as_json):
+    """Show interrupted session context — ready to paste into any AI tool.
+
+    \b
+    Examples:
+        reza session handoff
+        reza session handoff --id claude-abc123
+        reza session handoff --format json --budget 4000
+        reza session handoff --search "auth pages" --budget 2000
+    """
+    db = _require_db(ctx)
+    from .session import get_handoff_data
+    from .turns import search_turns
+
+    if as_json:
+        fmt = "json"
+
+    try:
+        data = get_handoff_data(db, session_id=session_id, budget_tokens=budget_tokens)
+    except ValueError as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        ctx.exit(1)
+        return
+
+    if data is None:
         console.print("[green]No interrupted sessions.[/green] All clear.")
         return
-    for s in sessions:
-        console.print(Panel(
-            f"  [bold]ID[/bold]       : [cyan]{s['id']}[/cyan]\n"
-            f"  [bold]LLM[/bold]      : {s['llm_name']}\n"
-            f"  [bold]Working on[/bold]: {s['working_on'] or '(not set)'}\n"
-            f"  [bold]Summary[/bold]  : {s['summary'] or '[dim]none[/dim]'}\n"
-            f"  [bold]Context[/bold]  :\n{s['conversation_context'] or '  [dim](none saved)[/dim]'}\n"
-            f"  [bold]Files[/bold]    : {s['files_modified'] or '[dim]none[/dim]'}",
-            title=f"[bold yellow]Interrupted session[/bold yellow]",
-            border_style="yellow",
-        ))
+
+    # Attach search results if --search provided
+    if search_query:
+        search_hits = search_turns(db, search_query, session_id=data["id"], limit=5)
+        data["search_results"] = search_hits
+        data["search_query"] = search_query
+    else:
+        data["search_results"] = []
+        data["search_query"] = None
+
+    if fmt == "json":
+        click.echo(json.dumps(data, indent=2, default=str))
+        return
+
+    click.echo(_render_handoff_markdown(data))
+
+
+# ─────────────────────────────────────────────
+# ingest
+# ─────────────────────────────────────────────
+
+@main.command()
+@click.argument("file_path")
+@click.option("--session-id", default=None, help="Link to an existing session instead of creating one.")
+@click.pass_context
+def ingest(ctx, file_path, session_id):
+    """Ingest a transcript file (.md or .json) as conversation turns.
+
+    Creates a new session automatically (llm_name derived from filename prefix)
+    unless --session-id is provided.
+
+    \b
+    Examples:
+        reza ingest .reza/handoffs/codex-20260410.md
+        reza ingest .reza/handoffs/claude-export.json
+        reza ingest export.json --session-id claude-abc123
+    """
+    db = _require_db(ctx)
+    from .ingest import ingest_file
+
+    try:
+        used_sid = ingest_file(db, file_path, session_id=session_id)
+        console.print(f"[green]Ingested[/green] [cyan]{file_path}[/cyan]")
+        console.print(f"  Session : [cyan]{used_sid}[/cyan]")
+        console.print(
+            f"  Search  : [bold]reza session search \"keyword\" --id {used_sid}[/bold]"
+        )
+        console.print(
+            f"  Handoff : [bold]reza session handoff --id {used_sid}[/bold]"
+        )
+    except FileNotFoundError as e:
+        err_console.print(f"[red]File not found:[/red] {e}")
+        ctx.exit(1)
+    except RuntimeError as e:
+        console.print(f"[yellow]Skipped:[/yellow] {e}")
+    except ValueError as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        ctx.exit(1)
 
 
 # ─────────────────────────────────────────────
