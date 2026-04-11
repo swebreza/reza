@@ -111,6 +111,21 @@ CREATE TABLE IF NOT EXISTS handoff_drops (
 
 CREATE INDEX IF NOT EXISTS idx_turns_session ON conversation_turns(session_id);
 CREATE INDEX IF NOT EXISTS idx_turns_index   ON conversation_turns(session_id, turn_index);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS conversation_turns_fts USING fts5(
+    content,
+    role UNINDEXED,
+    session_id UNINDEXED,
+    turn_id UNINDEXED,
+    tokenize='porter ascii'
+);
+
+CREATE TRIGGER IF NOT EXISTS turns_fts_insert
+AFTER INSERT ON conversation_turns
+BEGIN
+    INSERT INTO conversation_turns_fts(content, role, session_id, turn_id)
+    VALUES (new.content, new.role, new.session_id, new.id);
+END;
 """
 
 

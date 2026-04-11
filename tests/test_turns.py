@@ -117,3 +117,57 @@ class TestTurnsWithinBudget:
         assert len(result) == 2
         assert result[0]["content"] == "second"
         assert result[1]["content"] == "third"
+
+
+class TestSearchTurns:
+    def test_finds_matching_turns(self, db, session_id):
+        add_turns_bulk(db, session_id, [
+            {"role": "user", "content": "how do I reset the password"},
+            {"role": "assistant", "content": "go to the forgot password page"},
+            {"role": "user", "content": "what about two factor authentication"},
+        ])
+        from reza.turns import search_turns
+        results = search_turns(db, "password", session_id=session_id)
+        assert len(results) >= 1
+        assert any("password" in r["content"].lower() for r in results)
+
+    def test_returns_empty_for_no_match(self, db, session_id):
+        from reza.turns import search_turns
+        add_turns_bulk(db, session_id, [
+            {"role": "user", "content": "hello world"},
+        ])
+        results = search_turns(db, "authentication")
+        assert results == []
+
+    def test_porter_stemming_matches_variants(self, db, session_id):
+        from reza.turns import search_turns
+        add_turns_bulk(db, session_id, [
+            {"role": "assistant", "content": "the authentication flow is complete"},
+        ])
+        # "authenticate" should match "authentication" via porter stemmer
+        results = search_turns(db, "authenticate", session_id=session_id)
+        assert len(results) >= 1
+
+    def test_respects_session_id_filter(self, db):
+        from reza.turns import search_turns
+        from reza.session import start_session
+        sid1 = start_session(db, "claude", "session 1")
+        sid2 = start_session(db, "codex", "session 2")
+        add_turns_bulk(db, sid1, [{"role": "user", "content": "fix the login page"}])
+        add_turns_bulk(db, sid2, [{"role": "user", "content": "fix the logout page"}])
+        results = search_turns(db, "login", session_id=sid1)
+        assert all(r["session_id"] == sid1 for r in results)
+        assert len(results) == 1
+
+    def test_returns_empty_for_blank_query(self, db, session_id):
+        from reza.turns import search_turns
+        results = search_turns(db, "   ")
+        assert results == []
+
+    def test_limit_is_respected(self, db, session_id):
+        from reza.turns import search_turns
+        add_turns_bulk(db, session_id, [
+            {"role": "user", "content": f"token number {i}"} for i in range(10)
+        ])
+        results = search_turns(db, "token", session_id=session_id, limit=3)
+        assert len(results) <= 3

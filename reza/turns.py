@@ -1,7 +1,7 @@
 """Conversation turn storage and budget-aware retrieval."""
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from .schema import get_connection
 
@@ -101,3 +101,46 @@ def turns_within_budget(db: Path, session_id: str, budget_tokens: int) -> List[D
         result.append(turn)
         total += cost
     return list(reversed(result))
+
+
+def search_turns(
+    db: Path,
+    query: str,
+    session_id: Optional[str] = None,
+    limit: int = 5,
+) -> List[Dict]:
+    """Full-text search across conversation turns using FTS5 + BM25 ranking.
+
+    Searches all sessions if session_id is None, or restricts to one session.
+    Returns up to `limit` turns ordered by BM25 relevance (best match first).
+    Each result is a turn dict from conversation_turns, with an added 'score' key.
+    """
+    if not query or not query.strip():
+        return []
+    with get_connection(db) as conn:
+        if session_id:
+            rows = conn.execute(
+                """
+                SELECT ct.*, bm25(conversation_turns_fts) AS score
+                FROM conversation_turns_fts
+                JOIN conversation_turns ct ON ct.id = conversation_turns_fts.turn_id
+                WHERE conversation_turns_fts MATCH ?
+                  AND conversation_turns_fts.session_id = ?
+                ORDER BY score
+                LIMIT ?
+                """,
+                (query, session_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT ct.*, bm25(conversation_turns_fts) AS score
+                FROM conversation_turns_fts
+                JOIN conversation_turns ct ON ct.id = conversation_turns_fts.turn_id
+                WHERE conversation_turns_fts MATCH ?
+                ORDER BY score
+                LIMIT ?
+                """,
+                (query, limit),
+            ).fetchall()
+    return [dict(r) for r in rows]
