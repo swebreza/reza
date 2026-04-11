@@ -104,3 +104,50 @@ class TestHandoff:
         end_session(db, sid)
         handoff = get_handoff_info(db)
         assert not any(s["id"] == sid for s in handoff)
+
+
+class TestGetHandoffData:
+    def test_returns_none_when_no_interrupted_sessions(self, db):
+        from reza.session import get_handoff_data
+        assert get_handoff_data(db) is None
+
+    def test_returns_latest_interrupted_session(self, db):
+        from reza.session import get_handoff_data
+        sid = start_session(db, "claude", "task")
+        save_session(db, sid, summary="done something")
+        data = get_handoff_data(db)
+        assert data is not None
+        assert data["id"] == sid
+        assert data["summary"] == "done something"
+
+    def test_includes_turns(self, db):
+        from reza.session import get_handoff_data
+        from reza.turns import add_turns_bulk
+        sid = start_session(db, "claude", "task")
+        add_turns_bulk(db, sid, [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ])
+        data = get_handoff_data(db, session_id=sid)
+        assert len(data["turns"]) == 2
+        assert data["turns_truncated"] == 0
+        assert data["budget_applied"] is None
+
+    def test_budget_truncates_oldest_turns(self, db):
+        from reza.session import get_handoff_data
+        from reza.turns import add_turns_bulk
+        sid = start_session(db, "claude", "task")
+        add_turns_bulk(db, sid, [
+            {"role": "user", "content": "old", "token_est": 50},
+            {"role": "assistant", "content": "new", "token_est": 50},
+        ])
+        data = get_handoff_data(db, session_id=sid, budget_tokens=60)
+        assert len(data["turns"]) == 1
+        assert data["turns"][0]["content"] == "new"
+        assert data["turns_truncated"] == 1
+        assert data["budget_applied"] == 60
+
+    def test_raises_on_unknown_session_id(self, db):
+        from reza.session import get_handoff_data
+        with pytest.raises(ValueError, match="Session not found"):
+            get_handoff_data(db, session_id="nonexistent-abc")

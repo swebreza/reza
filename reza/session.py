@@ -104,3 +104,56 @@ def get_handoff_info(db: Path) -> List[Dict]:
             """
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_handoff_data(
+    db: Path,
+    session_id: Optional[str] = None,
+    budget_tokens: Optional[int] = None,
+) -> Optional[Dict]:
+    """Return enriched handoff dict for a session, including conversation turns.
+
+    If session_id is None, returns the most recent interrupted or active session.
+    Returns None if no matching session found.
+    Raises ValueError if a specific session_id is given but not found.
+
+    The returned dict contains all session fields plus:
+      - turns: list of turn dicts (chronological, budget-truncated if budget_tokens set)
+      - turns_truncated: int — how many oldest turns were dropped due to budget
+      - budget_applied: int or None — the budget_tokens value used
+    """
+    with get_connection(db) as conn:
+        if session_id:
+            row = conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Session not found: {session_id}")
+        else:
+            row = conn.execute(
+                """
+                SELECT * FROM sessions
+                WHERE status IN ('active', 'interrupted')
+                ORDER BY started_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+    if not row:
+        return None
+
+    data = dict(row)
+
+    from .turns import list_turns, turns_within_budget
+    if budget_tokens:
+        turns = turns_within_budget(db, data["id"], budget_tokens)
+        all_turns = list_turns(db, data["id"])
+        data["turns_truncated"] = len(all_turns) - len(turns)
+        data["budget_applied"] = budget_tokens
+    else:
+        turns = list_turns(db, data["id"])
+        data["turns_truncated"] = 0
+        data["budget_applied"] = None
+
+    data["turns"] = turns
+    return data
