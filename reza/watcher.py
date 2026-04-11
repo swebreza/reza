@@ -147,8 +147,28 @@ def start_watcher(project_dir: str, db: Path):
             return path.startswith(self._db_dir) or _should_ignore(path)
 
         def on_created(self, event):
-            if not event.is_directory and not self._skip(event.src_path):
-                _upsert_file(self.db, event.src_path, self.project_root, "created")
+            if event.is_directory:
+                return
+            path = event.src_path
+            # Auto-ingest files dropped into .reza/handoffs/
+            handoffs_dir = str(Path(self.project_root) / DB_DIR / "handoffs")
+            if path.startswith(handoffs_dir) and path.lower().endswith((".md", ".json")):
+                try:
+                    from .ingest import ingest_file
+                    sid = ingest_file(self.db, path)
+                    print(
+                        f"\n[reza] Auto-ingested: {Path(path).name} → session {sid}\n"
+                        f"  Search : reza session search \"keyword\" --id {sid}\n"
+                        f"  Handoff: reza session handoff --id {sid}\n"
+                    )
+                except RuntimeError:
+                    # Already ingested — silent skip
+                    pass
+                except Exception as e:
+                    print(f"\n[reza] Failed to ingest {Path(path).name}: {e}\n", file=sys.stderr)
+                return
+            if not self._skip(path):
+                _upsert_file(self.db, path, self.project_root, "created")
 
         def on_modified(self, event):
             if not event.is_directory and not self._skip(event.src_path):
