@@ -63,7 +63,7 @@ def export_markdown(db: Path, output_path: str):
             if s["summary"]:
                 lines.append(f"**Summary**: {s['summary']}")
             if s["conversation_context"]:
-                lines.append(f"**Context**:")
+                lines.append(f"**Legacy context**:")
                 lines.append(f"```")
                 lines.append(s["conversation_context"])
                 lines.append(f"```")
@@ -129,7 +129,7 @@ def export_context(db: Path, output_path: str):
             if s["summary"]:
                 lines.append(f"  Summary: {s['summary']}")
             if s["conversation_context"]:
-                lines.append(f"  Context: {s['conversation_context'][:300]}...")
+                lines.append(f"  Legacy context: {s['conversation_context'][:300]}...")
         lines.append("")
 
     # Key files — those with purpose descriptions

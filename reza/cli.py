@@ -421,7 +421,11 @@ def session_save(ctx, session_id, summary, context, files):
     """Save progress to an active session."""
     db = _require_db(ctx)
     from .session import save_session
-    save_session(db, session_id, summary, context, files)
+    ok = save_session(db, session_id, summary, context, files)
+    if not ok:
+        err_console.print(f"[red]Error:[/red] Session not found: {session_id}")
+        ctx.exit(1)
+        return
     console.print(f"[green]Session[/green] [cyan]{session_id}[/cyan] [green]updated.[/green]")
 
 
@@ -433,7 +437,11 @@ def session_end(ctx, session_id, summary):
     """Mark a session as completed."""
     db = _require_db(ctx)
     from .session import end_session
-    end_session(db, session_id, summary)
+    ok = end_session(db, session_id, summary)
+    if not ok:
+        err_console.print(f"[red]Error:[/red] Session not found: {session_id}")
+        ctx.exit(1)
+        return
     console.print(f"[green]Session[/green] [cyan]{session_id}[/cyan] [green]closed.[/green]")
 
 
@@ -815,6 +823,18 @@ def upgrade(ctx, project_dir):
 
     # Ensure handoffs dir exists
     db.parent.joinpath("handoffs").mkdir(exist_ok=True)
+
+    # Backfill FTS index for any existing turns not yet indexed
+    conn.execute("""
+        INSERT OR IGNORE INTO conversation_turns_fts(content, role, session_id, turn_id)
+        SELECT ct.content, ct.role, ct.session_id, ct.id
+        FROM conversation_turns ct
+        WHERE ct.id NOT IN (
+            SELECT turn_id FROM conversation_turns_fts
+            WHERE turn_id IS NOT NULL
+        )
+    """)
+    conn.commit()
 
     with console.status("[bold green]Re-scanning files…[/bold green]"):
         indexed, skipped = scan_files(conn, project_dir)

@@ -34,8 +34,10 @@ reza creates a local SQLite database (`.reza/context.db`) in your project that s
 
 - Every file path, type, line count, and **purpose** (extracted from docstrings and comments)
 - All active LLM sessions and their progress
+- Compact session summaries written by the active tool on save/end
+- Full raw conversation turns, searchable across the session with SQLite FTS5
 - A real-time change log synced via file watcher and git hooks
-- Handoff notes so any LLM can continue where another left off
+- Transcript drops in `.reza/handoffs/` for tools that export chats instead of writing turns directly
 
 Any AI tool can query this database instead of scanning your files.
 
@@ -60,6 +62,7 @@ That's it. Your project is now indexed.
 ```bash
 reza status          # what reza knows about your project
 reza query           # full context overview
+reza session handoff # summary + recent turns for the latest session
 reza watch &         # optional: real-time file sync
 ```
 
@@ -260,6 +263,13 @@ reza session save --id claude-abc12345 \
 # Check for interrupted sessions (cross-LLM handoff)
 reza session handoff
 
+# Search the full raw transcript for relevant older context
+reza session search "jwt middleware" --id claude-abc12345
+
+# Add turns directly or from exported transcripts
+reza session turns add --id claude-abc12345 --role assistant --content "Next: wire auth routes"
+reza ingest .reza/handoffs/codex-20260410.json
+
 # List all sessions
 reza session list
 
@@ -398,6 +408,7 @@ This is reza's killer feature. Hand off work between AI tools without re-explain
 ```bash
 # In Cursor:
 reza session handoff
+reza session search "JWT" --id claude-abc12345
 
 # Output:
 # Interrupted session: [claude] claude-abc12345
@@ -407,9 +418,10 @@ reza session handoff
 #          Avoid circular import in models.py — use string references.
 #          Next: implement auth/views.py and wire up to urls.py
 # Files modified: auth/models.py, auth/serializers.py
+# Use `reza session search` to pull older, relevant decisions back into context on demand.
 ```
 
-Cursor now knows exactly where to continue, what decisions were made, and what to avoid. Zero re-explanation.
+Cursor gets the summary, the latest turns, and a direct path to search older raw transcript context without re-explaining anything.
 
 ---
 
@@ -427,13 +439,16 @@ Your project
         └── pre-commit       ← Auto-updates DB on every commit
 ```
 
-**Database schema (7 tables):**
+**Database schema (conversation-aware):**
 
 | Table | What it stores |
 |-------|---------------|
 | `project_meta` | Language, framework, project name |
 | `files` | All files with path, type, line count, purpose |
 | `sessions` | LLM sessions with progress and context |
+| `conversation_turns` | Raw per-turn chat history for each session |
+| `conversation_turns_fts` | Full-text search index over raw chat turns |
+| `handoff_drops` | Transcript files already ingested from `.reza/handoffs/` |
 | `changes` | Real-time change log linked to sessions |
 | `file_locks` | Active file locks — which session owns which file |
 | `conflicts` | Conflict history — when two agents touched the same locked file |
@@ -578,6 +593,8 @@ reza session save --id claude-f3a91b2c \
 
 # Day 2: Switch to Cursor for frontend work
 reza session handoff
+reza session search "idempotency keys" --id claude-f3a91b2c
+# â†’ Summary + recent turns from handoff, plus targeted older context from search
 # → Shows claude-f3a91b2c with full context — zero re-explanation needed
 
 reza session start --llm cursor --task "frontend checkout flow"

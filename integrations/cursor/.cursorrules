@@ -34,6 +34,11 @@ reza session handoff
 ```
 
 This shows any interrupted sessions from Claude, Codex, Aider, or any other LLM.
+Use the summary and recent turns first. If you need older specific context, run:
+
+```bash
+reza session search "keyword from the earlier discussion"
+```
 Read the `context` field before making changes — it contains key decisions and
 things that were tried and failed.
 
@@ -48,6 +53,10 @@ reza session save --id cursor-XXXXXXXX \
   --summary "what was done" \
   --context "decisions made, what is next" \
   --files "files,you,changed"
+
+# Append turns directly or ingest an exported transcript when you need full chat continuity:
+reza session turns add --id cursor-XXXXXXXX --role assistant --content "what changed, what is next"
+reza ingest .reza/handoffs/cursor-20260410.json
 
 # End:
 reza session end --id cursor-XXXXXXXX
@@ -68,6 +77,7 @@ Then reference it in Cursor: `@.reza/CONTEXT.md`
 3. Use `reza query --find` instead of searching manually
 4. Save session progress before stopping work
 5. Use `reza export` to generate a context file for @-mentions
+6. Use `reza session search` to pull older relevant chat context back in
 
 ### Project info:
 

@@ -42,6 +42,11 @@ class TestInitializeProject:
         assert db_path.exists()
         assert db_path.name == DB_NAME
 
+    def test_creates_handoffs_directory(self, tmp_project):
+        result = initialize_project(str(tmp_project), install_hooks=False)
+        db_path = Path(result["db_path"])
+        assert (db_path.parent / "handoffs").is_dir()
+
     def test_indexes_files(self, tmp_project):
         result = initialize_project(str(tmp_project), install_hooks=False)
         assert result["indexed"] >= 3  # main.py, utils.py, README.md

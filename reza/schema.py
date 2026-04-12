@@ -117,12 +117,26 @@ CREATE VIRTUAL TABLE IF NOT EXISTS conversation_turns_fts USING fts5(
     role UNINDEXED,
     session_id UNINDEXED,
     turn_id UNINDEXED,
-    tokenize='porter ascii'
+    tokenize='porter unicode61'
 );
 
 CREATE TRIGGER IF NOT EXISTS turns_fts_insert
 AFTER INSERT ON conversation_turns
 BEGIN
+    INSERT INTO conversation_turns_fts(content, role, session_id, turn_id)
+    VALUES (new.content, new.role, new.session_id, new.id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS turns_fts_delete
+AFTER DELETE ON conversation_turns
+BEGIN
+    DELETE FROM conversation_turns_fts WHERE turn_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS turns_fts_update
+AFTER UPDATE OF content ON conversation_turns
+BEGIN
+    DELETE FROM conversation_turns_fts WHERE turn_id = old.id;
     INSERT INTO conversation_turns_fts(content, role, session_id, turn_id)
     VALUES (new.content, new.role, new.session_id, new.id);
 END;

@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2026-04-12
+
+### Added
+
+- `reza session turns add` — append conversation turns to a session (single turn or bulk from JSON file)
+- `reza session turns list` — list all turns for a session
+- `reza session search <query>` — full-text search across all conversation history using FTS5 + BM25 ranking; supports `--id` (session filter), `--limit`, `--json`
+- `reza ingest <file>` — ingest `.md` or `.json` transcript files as conversation turns; auto-creates session from filename prefix; prevents double-import
+- `reza session handoff` extended — new `--id`, `--format markdown|json`, `--budget`, `--search` flags; renders structured markdown brief ready to paste into any AI tool
+- `reza watch` — auto-ingests files dropped into `.reza/handoffs/` in real time
+- FTS5 `conversation_turns_fts` virtual table with Porter + Unicode61 stemming for accurate multilingual search
+- DELETE and UPDATE sync triggers keep FTS index consistent with base table
+- `reza upgrade` backfills FTS index for existing turn data
+
+### Changed
+
+- `reza session handoff --json` is now deprecated in favour of `--format json`
+
+---
+
 ## [0.2.0] — 2026-04-11
 
 ### Added
