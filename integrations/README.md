@@ -52,6 +52,13 @@ reza session save --id TOOL-XXXXXXXX \
   --summary "what was done" \
   --context "key decisions, next steps, what failed"
 
+# 4b. For full chat continuity, store or ingest the raw transcript:
+reza session turns add --id TOOL-XXXXXXXX --role assistant --content "what changed, what is next"
+reza ingest .reza/handoffs/tool-20260410.json
+
+# 4c. Recover older, relevant context on demand:
+reza session search "keyword from the earlier discussion" --id TOOL-XXXXXXXX
+
 # 5. End your session:
 reza session end --id TOOL-XXXXXXXX
 ```

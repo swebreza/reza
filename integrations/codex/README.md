@@ -67,14 +67,20 @@ The assistant can then answer questions like "what files handle auth?" accuratel
 ```bash
 # Check what Claude / Cursor left off:
 reza session handoff
+reza session search "auth middleware"
 
 # Save your Codex session:
 reza session start --llm codex --task "..."
 reza session save --id codex-XXXXXXXX --summary "..." --context "..."
+reza session turns add --id codex-XXXXXXXX --role assistant --content "what you decided / what is next"
 reza session end --id codex-XXXXXXXX
 
+# Or ingest a full exported transcript when Codex wrote chat history elsewhere:
+reza ingest .reza/handoffs/codex-20260410.json
+
 # Resume from Codex in Claude:
-reza session handoff    # shows Codex session context
+reza session handoff    # shows summary + recent turns
+reza session search "keyword" --id codex-XXXXXXXX
 ```
 
 ## Prompt template for Codex

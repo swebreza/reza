@@ -54,8 +54,12 @@ Use this instead of glob/grep when looking for files by purpose.
 reza session handoff
 ```
 
-If any sessions appear, read their `context` field before doing anything.
-This is how you continue where another LLM left off.
+If any sessions appear, use the summary and recent turns first. If you need
+older, specific context, search the raw transcript:
+
+```bash
+reza session search "keyword from the earlier discussion"
+```
 
 ## Step 5 — Start your own session
 
@@ -70,6 +74,13 @@ reza session save --id claude-XXXXXXXX \
   --summary "what was accomplished" \
   --context "key decisions, what to do next, what failed" \
   --files "src/auth.py, src/models.py"
+```
+
+For turn-by-turn continuity, append turns directly or ingest an exported transcript:
+
+```bash
+reza session turns add --id claude-XXXXXXXX --role assistant --content "what changed, what is next"
+reza ingest .reza/handoffs/claude-20260410.json
 ```
 
 ## Step 6 — End your session
@@ -103,6 +114,7 @@ reza export --format context  # compact LLM prompt format
 2. **Use `--find` instead of glob.** `reza query --find auth` is faster and more accurate than globbing.
 3. **Save progress before ending.** Use `reza session save` when switching tasks or tools.
 4. **Check handoff.** Always run `reza session handoff` at the start of a session.
+5. **Search old chat when needed.** Use `reza session search` instead of relying only on recency.
 
 ## File info
 
