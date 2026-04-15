@@ -626,6 +626,357 @@ def session_handoff(ctx, session_id, fmt, budget_tokens, search_query, as_json):
 
 
 # ─────────────────────────────────────────────
+# graph group
+# ─────────────────────────────────────────────
+
+@main.group()
+def graph():
+    """Code knowledge graph — structural code awareness.
+
+    Build a Tree-sitter AST graph of your codebase so LLMs read only
+    what matters. Requires: pip install reza[graph]
+
+    \b
+    Examples:
+        reza graph build       # parse entire codebase
+        reza graph update      # incremental update (changed files only)
+        reza graph status      # graph statistics
+        reza graph impact      # blast-radius of recent changes
+        reza graph search auth # find code nodes by name
+    """
+
+
+@graph.command("build")
+@click.option("--dir", "project_dir", default=".", show_default=True,
+              help="Project root directory.")
+@click.pass_context
+def graph_build(ctx, project_dir):
+    """Build the code knowledge graph from scratch.
+
+    Parses all supported source files using Tree-sitter and stores
+    structural nodes (functions, classes, imports) and edges (calls,
+    inheritance, contains) in the context database.
+    """
+    db = _require_db(ctx)
+
+    try:
+        from .graph.builder import build_graph
+    except ImportError:
+        err_console.print(
+            "[red]Graph dependencies not installed.[/red]\n"
+            "Install with: [bold]pip install reza[graph][/bold]"
+        )
+        ctx.exit(1)
+        return
+
+    project_dir = str(Path(project_dir).resolve())
+    with console.status("[bold green]Building code graph…[/bold green]"):
+        result = build_graph(project_dir, db, incremental=False)
+
+    console.print(Panel(
+        f"  [bold]Files parsed[/bold]  : {result['parsed']:,}\n"
+        f"  [bold]Files skipped[/bold] : {result['skipped']:,}\n"
+        f"  [bold]Errors[/bold]        : {result['errors']}\n"
+        f"  [bold]Total nodes[/bold]   : {result['total_nodes']:,}\n"
+        f"  [bold]Total edges[/bold]   : {result['total_edges']:,}\n"
+        f"  [bold]Time[/bold]          : {result['elapsed_s']}s",
+        title="[bold]reza graph build[/bold]",
+        border_style="green",
+    ))
+
+
+@graph.command("update")
+@click.option("--dir", "project_dir", default=".", show_default=True,
+              help="Project root directory.")
+@click.pass_context
+def graph_update(ctx, project_dir):
+    """Incrementally update the code graph (changed files only).
+
+    Uses SHA-256 hashes to detect which files changed since the last
+    build, re-parses only those files. Typically completes in <2 seconds.
+    """
+    db = _require_db(ctx)
+
+    try:
+        from .graph.builder import build_graph
+    except ImportError:
+        err_console.print(
+            "[red]Graph dependencies not installed.[/red]\n"
+            "Install with: [bold]pip install reza[graph][/bold]"
+        )
+        ctx.exit(1)
+        return
+
+    project_dir = str(Path(project_dir).resolve())
+    with console.status("[bold green]Updating code graph…[/bold green]"):
+        result = build_graph(project_dir, db, incremental=True)
+
+    if result["parsed"] == 0:
+        console.print(
+            f"[dim]Graph up to date — {result['skipped']:,} files unchanged.[/dim]"
+        )
+    else:
+        console.print(
+            f"[green]Updated {result['parsed']} file(s)[/green] "
+            f"({result['skipped']:,} unchanged, {result['errors']} errors) "
+            f"in {result['elapsed_s']}s"
+        )
+
+
+@graph.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def graph_status(ctx, as_json):
+    """Show code graph statistics."""
+    db = _require_db(ctx)
+
+    try:
+        from .graph.store import GraphStore
+    except ImportError:
+        err_console.print(
+            "[red]Graph dependencies not installed.[/red]\n"
+            "Install with: [bold]pip install reza[graph][/bold]"
+        )
+        ctx.exit(1)
+        return
+
+    store = GraphStore(db)
+    stats = store.get_stats()
+    store.close()
+
+    if as_json:
+        click.echo(json.dumps({
+            "total_nodes": stats.total_nodes,
+            "total_edges": stats.total_edges,
+            "nodes_by_kind": stats.nodes_by_kind,
+            "edges_by_kind": stats.edges_by_kind,
+            "languages": stats.languages,
+            "files_count": stats.files_count,
+            "last_updated": stats.last_updated,
+        }, indent=2))
+        return
+
+    if stats.total_nodes == 0:
+        console.print(
+            "[yellow]No code graph built yet.[/yellow]\n"
+            "Run [bold]reza graph build[/bold] to parse your codebase."
+        )
+        return
+
+    console.print(Panel(
+        f"  [bold]Files[/bold]     : {stats.files_count:,}\n"
+        f"  [bold]Nodes[/bold]     : {stats.total_nodes:,}\n"
+        f"  [bold]Edges[/bold]     : {stats.total_edges:,}\n"
+        f"  [bold]Languages[/bold] : {', '.join(stats.languages) or 'none'}\n"
+        f"  [bold]Updated[/bold]   : {stats.last_updated or 'never'}",
+        title="[bold]reza graph status[/bold]",
+        border_style="blue",
+    ))
+
+    if stats.nodes_by_kind:
+        table = Table(title="Nodes by kind", box=box.SIMPLE)
+        table.add_column("Kind", style="cyan")
+        table.add_column("Count", justify="right")
+        for kind, count in sorted(stats.nodes_by_kind.items(), key=lambda x: -x[1]):
+            table.add_row(kind, f"{count:,}")
+        console.print(table)
+
+    if stats.edges_by_kind:
+        table = Table(title="Edges by kind", box=box.SIMPLE)
+        table.add_column("Kind", style="cyan")
+        table.add_column("Count", justify="right")
+        for kind, count in sorted(stats.edges_by_kind.items(), key=lambda x: -x[1]):
+            table.add_row(kind, f"{count:,}")
+        console.print(table)
+
+
+@graph.command("impact")
+@click.argument("files", nargs=-1, required=False)
+@click.option("--depth", default=3, show_default=True, help="Max BFS depth.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.option("--compact", is_flag=True, help="Token-compact output for LLMs.")
+@click.pass_context
+def graph_impact(ctx, files, depth, as_json, compact):
+    """Show blast radius of changed files.
+
+    Without arguments, auto-detects changed files via git diff.
+
+    \b
+    Examples:
+        reza graph impact                    # auto-detect from git
+        reza graph impact src/auth.py        # specific file
+        reza graph impact --compact          # minimal output for LLMs
+        reza graph impact --json             # machine-readable
+    """
+    db = _require_db(ctx)
+
+    try:
+        from .graph.store import GraphStore
+        from .graph.impact import get_impact_radius, get_compact_context
+    except ImportError:
+        err_console.print(
+            "[red]Graph dependencies not installed.[/red]\n"
+            "Install with: [bold]pip install reza[graph][/bold]"
+        )
+        ctx.exit(1)
+        return
+
+    changed = list(files)
+    if not changed:
+        changed = _git_changed_files()
+        if not changed:
+            console.print("[dim]No changed files detected.[/dim]")
+            return
+
+    store = GraphStore(db)
+
+    if compact:
+        result = get_compact_context(store, changed, max_depth=depth)
+        store.close()
+        if as_json:
+            click.echo(json.dumps(result, indent=2))
+        else:
+            _print_compact_impact(result)
+        return
+
+    result = get_impact_radius(store, changed, max_depth=depth)
+    store.close()
+
+    if as_json:
+        click.echo(json.dumps({
+            "changed_files": changed,
+            "impacted_files": result["impacted_files"],
+            "changed_nodes": len(result["changed_nodes"]),
+            "impacted_nodes": len(result["impacted_nodes"]),
+            "edges": len(result["edges"]),
+            "test_gaps": [g["name"] for g in result["test_gaps"]],
+            "truncated": result["truncated"],
+        }, indent=2))
+        return
+
+    _print_impact_result(changed, result)
+
+
+@graph.command("search")
+@click.argument("query")
+@click.option("--limit", default=20, show_default=True, help="Max results.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def graph_search(ctx, query, limit, as_json):
+    """Search code nodes by name or keyword.
+
+    \b
+    Examples:
+        reza graph search "authenticate"
+        reza graph search "UserService" --limit 5
+    """
+    db = _require_db(ctx)
+
+    try:
+        from .graph.store import GraphStore
+    except ImportError:
+        err_console.print(
+            "[red]Graph dependencies not installed.[/red]\n"
+            "Install with: [bold]pip install reza[graph][/bold]"
+        )
+        ctx.exit(1)
+        return
+
+    store = GraphStore(db)
+    results = store.search_nodes(query, limit=limit)
+    store.close()
+
+    if as_json:
+        click.echo(json.dumps([
+            {
+                "name": n.name,
+                "kind": n.kind,
+                "file_path": n.file_path,
+                "line_start": n.line_start,
+                "line_end": n.line_end,
+                "language": n.language,
+                "params": n.params,
+            }
+            for n in results
+        ], indent=2))
+        return
+
+    if not results:
+        console.print(f"[dim]No code nodes matching '{query}'[/dim]")
+        return
+
+    table = Table(title=f"Code search: '{query}'", box=box.SIMPLE)
+    table.add_column("Kind", style="cyan", width=10)
+    table.add_column("Name", style="bold")
+    table.add_column("File", style="dim")
+    table.add_column("Line", justify="right", style="dim")
+    for n in results:
+        table.add_row(n.kind, n.name, n.file_path, str(n.line_start))
+    console.print(table)
+
+
+def _git_changed_files() -> list[str]:
+    """Detect changed files via git diff (staged + unstaged)."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        staged = subprocess.run(
+            ["git", "diff", "--name-only", "--cached"],
+            capture_output=True, text=True, timeout=10,
+        )
+        files = set()
+        for line in result.stdout.splitlines() + staged.stdout.splitlines():
+            line = line.strip()
+            if line:
+                files.add(line)
+        return sorted(files)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return []
+
+
+def _print_impact_result(changed: list[str], result: dict):
+    console.print(f"\n[bold]Changed files:[/bold] {', '.join(changed)}")
+    console.print(
+        f"[bold]Blast radius:[/bold] "
+        f"{len(result['impacted_nodes'])} nodes across "
+        f"{len(result['impacted_files'])} files"
+    )
+
+    if result["impacted_files"]:
+        console.print("\n[bold yellow]Impacted files:[/bold yellow]")
+        for f in result["impacted_files"]:
+            console.print(f"  [cyan]{f}[/cyan]")
+
+    if result["test_gaps"]:
+        console.print(f"\n[bold red]Test gaps ({len(result['test_gaps'])}):[/bold red]")
+        for g in result["test_gaps"][:10]:
+            console.print(f"  [yellow]{g['kind']}[/yellow] {g['name']} ({g['file_path']})")
+
+    if result["truncated"]:
+        console.print(
+            f"\n[dim]Results truncated. Total impacted: {result['total_impacted']}[/dim]"
+        )
+
+
+def _print_compact_impact(result: dict):
+    console.print(f"[bold]Changed:[/bold] {', '.join(result['changed_files'])}")
+    console.print(f"[bold]Impacted:[/bold] {', '.join(result['impacted_files']) or 'none'}")
+
+    if result["file_signatures"]:
+        console.print("\n[bold]Signatures:[/bold]")
+        for fp, sigs in result["file_signatures"].items():
+            console.print(f"  [cyan]{fp}[/cyan]")
+            for sig in sigs[:5]:
+                console.print(f"    {sig}")
+
+    if result["test_gaps"]:
+        console.print(f"\n[bold red]Untested:[/bold red] {', '.join(result['test_gaps'][:10])}")
+
+
+# ─────────────────────────────────────────────
 # ingest
 # ─────────────────────────────────────────────
 

@@ -142,6 +142,81 @@ BEGIN
 END;
 """
 
+GRAPH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS code_nodes (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind           TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    qualified_name TEXT NOT NULL UNIQUE,
+    file_path      TEXT NOT NULL,
+    line_start     INTEGER,
+    line_end       INTEGER,
+    language       TEXT,
+    parent_name    TEXT,
+    params         TEXT,
+    return_type    TEXT,
+    is_test        INTEGER DEFAULT 0,
+    file_hash      TEXT,
+    extra          TEXT DEFAULT '{}',
+    updated_at     REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS code_edges (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind             TEXT NOT NULL,
+    source_qualified TEXT NOT NULL,
+    target_qualified TEXT NOT NULL,
+    file_path        TEXT NOT NULL,
+    line             INTEGER DEFAULT 0,
+    confidence       REAL DEFAULT 1.0,
+    confidence_tier  TEXT DEFAULT 'EXTRACTED',
+    extra            TEXT DEFAULT '{}',
+    updated_at       REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS code_graph_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_code_nodes_file      ON code_nodes(file_path);
+CREATE INDEX IF NOT EXISTS idx_code_nodes_kind      ON code_nodes(kind);
+CREATE INDEX IF NOT EXISTS idx_code_nodes_qualified  ON code_nodes(qualified_name);
+CREATE INDEX IF NOT EXISTS idx_code_edges_source     ON code_edges(source_qualified);
+CREATE INDEX IF NOT EXISTS idx_code_edges_target     ON code_edges(target_qualified);
+CREATE INDEX IF NOT EXISTS idx_code_edges_kind       ON code_edges(kind);
+CREATE INDEX IF NOT EXISTS idx_code_edges_file       ON code_edges(file_path);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS code_nodes_fts USING fts5(
+    name,
+    qualified_name,
+    file_path UNINDEXED,
+    node_id UNINDEXED,
+    tokenize='porter unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS code_nodes_fts_insert
+AFTER INSERT ON code_nodes
+BEGIN
+    INSERT INTO code_nodes_fts(name, qualified_name, file_path, node_id)
+    VALUES (new.name, new.qualified_name, new.file_path, new.id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS code_nodes_fts_delete
+AFTER DELETE ON code_nodes
+BEGIN
+    DELETE FROM code_nodes_fts WHERE node_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS code_nodes_fts_update
+AFTER UPDATE OF name, qualified_name ON code_nodes
+BEGIN
+    DELETE FROM code_nodes_fts WHERE node_id = old.id;
+    INSERT INTO code_nodes_fts(name, qualified_name, file_path, node_id)
+    VALUES (new.name, new.qualified_name, new.file_path, new.id);
+END;
+"""
+
 
 def find_db_path(start_dir: Optional[str] = None) -> Optional[Path]:
     """Walk up the directory tree to find .reza/context.db."""
@@ -164,19 +239,20 @@ def get_db_path(project_dir: Optional[str] = None) -> Path:
 def _auto_migrate(conn: sqlite3.Connection) -> None:
     """Silently apply missing schema tables to legacy databases.
 
-    Checks for the presence of the `conversation_turns` table (added in v0.2.0).
-    If absent, runs the full idempotent schema — all CREATE IF NOT EXISTS statements
-    are safe to re-run on a DB that already has the base tables.
-
-    This lets users with pre-v0.2.0 databases run `reza session search`,
-    `reza session handoff`, and `reza sync-claude` without first running
-    `reza upgrade`, instead of crashing with OperationalError.
+    Checks for the presence of the `conversation_turns` table (added in v0.2.0)
+    and the `code_nodes` table (added in v0.5.0 graph layer).
+    All CREATE IF NOT EXISTS statements are safe to re-run.
     """
     try:
         conn.execute("SELECT 1 FROM conversation_turns LIMIT 1")
     except sqlite3.OperationalError:
-        # Legacy DB — apply new tables + indexes + FTS + triggers
         conn.executescript(SCHEMA)
+        conn.commit()
+
+    try:
+        conn.execute("SELECT 1 FROM code_nodes LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.executescript(GRAPH_SCHEMA)
         conn.commit()
 
 
@@ -211,4 +287,5 @@ def get_connection(db_path: Optional[Path] = None) -> Generator[sqlite3.Connecti
 def init_schema(conn: sqlite3.Connection) -> None:
     """Initialize all tables and indexes in the database."""
     conn.executescript(SCHEMA)
+    conn.executescript(GRAPH_SCHEMA)
     conn.commit()

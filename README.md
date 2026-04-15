@@ -248,42 +248,65 @@ reza query --file src/api.py  # Full info about one file
 reza query --json             # Machine-readable JSON output
 ```
 
+### One-time setup
+
+```bash
+reza install-hooks                # auto-detect and register all installed tools
+reza install-hooks --tool aider   # register one specific tool
+reza install-hooks --list         # see what was detected and enabled
+```
+
+Then just keep `reza watch` running — it handles file changes AND conversation sync for every registered tool.
+
 ### Session management
 
 ```bash
-# Start a session (get back a session ID)
+# Start a session (reza auto-links to an existing thread when confident)
 reza session start --llm claude --task "implementing JWT auth"
+# → [reza] Continuing thread: jwt-auth-thread   (if auto-linked)
 
-# Auto-sync Claude Code turns on every response (zero tokens):
-reza install-claude-hook          # one-time: writes ~/.claude/settings.json Stop hook
+# Explicit thread control
+reza session start --llm cursor --task "JWT auth" --continue           # force-link to recent thread
+reza session start --llm cursor --task "JWT auth" --thread thread-abc  # link to specific thread
+reza session start --llm cursor --task "unrelated work"                # new thread
 
-# Save progress (optional — auto-sync handles turn storage)
+# Save a human-readable summary (optional — auto-sync stores all raw turns)
 reza session save --id claude-abc12345 \
-  --summary "Models and serializers done, starting views" \
-  --context "Decided on JWT over sessions — see auth/tokens.py. Avoid circular import in models.py" \
+  --summary "Models done, starting views" \
   --files "auth/models.py, auth/serializers.py"
 
-# Check for interrupted sessions (cross-LLM handoff)
-reza session handoff
-reza session handoff --budget 8000          # truncate to ~8k tokens
-reza session handoff --format json          # machine-readable
+# Cross-tool thread handoff (full history across all tools)
+reza session handoff                    # full thread, all tools
+reza session handoff --budget 8000      # token-budget-aware truncation
+reza session handoff --session-only     # single session only
+reza session handoff --format json      # machine-readable
 
-# Search the full raw transcript for relevant older context
-reza session search "jwt middleware" --id claude-abc12345
+# Search across the entire thread
+reza session search "jwt middleware"
+reza session search "circular import" --id claude-abc12345
 
-# Manually sync a Claude Code .jsonl conversation file:
-reza sync-claude ~/.claude/projects/HASH/SESSION.jsonl
-reza sync-claude --from-hook                # Stop hook mode — reads transcript_path from stdin
+# Manual one-shot sync (when reza watch wasn't running)
+reza sync-all
+reza sync-all --tool aider
 
-# Add turns directly or from exported transcripts
+# Add turns manually or ingest exported transcripts
 reza session turns add --id claude-abc12345 --role assistant --content "Next: wire auth routes"
-reza ingest .reza/handoffs/codex-20260410.json
+reza ingest .reza/handoffs/cursor-export.json
 
 # List all sessions
 reza session list
 
 # Close a session
 reza session end --id claude-abc12345
+```
+
+### Thread management
+
+```bash
+reza thread list                                          # all threads
+reza thread show --id thread-abc                          # full thread detail
+reza thread link --session cursor-abc --thread thread-xyz # manually link a session
+reza thread title --id thread-abc --title "JWT work"      # rename a thread
 ```
 
 ### Exporting (for tools without direct DB access)
@@ -413,63 +436,77 @@ reza claim src/auth.py --session cursor-xyz789   # ✅ granted
 
 ---
 
-## Cross-LLM Handoff
+## Cross-Tool Threads — The Killer Feature
 
-This is reza's killer feature. Hand off work between AI tools without re-explaining anything — even when Claude hits its context limit.
+Work moves between tools. You start in Cursor, continue in Claude Code when it gets complex, hand off to Codex when Claude hits its context limit, then come back to Cursor for the frontend. reza treats all of that as **one logical thread** — not four disconnected sessions.
 
-**Scenario**: Claude was implementing auth, hit its context limit mid-session. You switch to Codex.
-
-**Without reza**: Codex starts from scratch. Re-explains stack, re-reads files, may contradict Claude's decisions.
-
-**With reza (auto-sync via Stop hook — recommended):**
-
-```bash
-# One-time setup: install the Stop hook
-reza session start --llm claude --task "implementing JWT auth"
-reza install-claude-hook
+```
+Thread: "jwt-auth-thread"
+├── cursor-abc      Cursor       09:00  completed
+├── claude-def      Claude Code  11:30  interrupted  ← context limit hit here
+├── codex-ghi       Codex        14:00  interrupted
+└── cursor-jkl      Cursor       15:22  active        ← you are here
 ```
 
-The hook fires after every Claude response. No tokens needed. Every turn is saved to reza automatically, even when Claude hits its context limit.
-
 ```bash
-# Claude hits context limit. Switch to Codex immediately — no waiting.
 reza session handoff --budget 8000
-
-# Output:
-# Session Handoff: claude-abc12345
-# Tool: Claude Code  |  Started: 2026-04-12 14:22  |  Status: interrupted
-#
-# What Was Being Done
-# JWT authentication implementation
-#
-# Summary
-# Models and serializers complete. Starting on views.
-#
-# Recent Conversation (~8000 tokens, most recent first)
-# assistant: Next step is auth/views.py. Use SimpleJWT — avoid session auth...
-# user: should I use sessions or JWT?
-# ...
-#
-# Files Modified
-# - auth/models.py
-# - auth/serializers.py
-#
-# Pick Up From Here
-# Next step is auth/views.py. Use SimpleJWT — avoid session auth...
+# → Full conversation history across ALL four tools, budget-truncated, ready to paste
 ```
 
-Paste this into Codex. It picks up exactly where Claude left off.
+### One-time setup
 
 ```bash
-# Search older context on demand (FTS5 — no re-reading files):
-reza session search "JWT" --id claude-abc12345
-reza session search "circular import"
+# Register all tools you have installed:
+reza install-hooks
+
+# Start a session (reza links subsequent sessions automatically):
+reza session start --llm cursor --task "JWT auth"
 ```
 
-**Manual sync (if Stop hook is not installed):**
+After that — nothing. Every tool's conversation is saved automatically as you work.
+
+### How auto-sync works per tool
+
+| Tool | Sync method |
+|------|------------|
+| **Claude Code** | Stop hook — fires after every response, zero tokens |
+| **Aider** | File-watch on `.aider.chat.history.md` — near-instant |
+| **Codex CLI** | File-watch on `~/.codex/conversations/` |
+| **Cursor** | Drop `.reza/handoffs/export.json` — auto-ingested by `reza watch` |
+| **Kilocode** | Drop `.reza/handoffs/export.json` — auto-ingested |
+| **Codex Desktop** | Drop `.reza/handoffs/export.json` — auto-ingested |
+
+For GUI tools (Cursor, Kilocode, Codex Desktop), their internal conversation storage is not publicly accessible. Export the chat once and drop it in `.reza/handoffs/` — `reza watch` ingests it automatically. No command needed.
+
+### Thread linking — three modes
+
+reza links sessions into threads automatically. You can also control it explicitly:
 
 ```bash
-reza sync-claude ~/.claude/projects/HASH/SESSION.jsonl --session-id claude-abc12345
+# Auto (reza detects same task, < 2hr gap) — silent, just works
+reza session start --llm claude --task "JWT auth"
+# → [reza] Continuing thread: jwt-auth-thread
+
+# Semi-auto (longer gap or ambiguous) — one prompt
+reza session start --llm codex --task "JWT refresh tokens"
+# → Continue thread 'jwt-auth-thread'? [Y/n]
+
+# Explicit — you decide
+reza session start --llm cursor --task "JWT auth" --continue        # link to recent thread
+reza session start --llm cursor --task "unrelated work"             # new thread
+```
+
+### Full cross-tool handoff
+
+```bash
+reza session handoff                    # full thread, all tools
+reza session handoff --budget 8000      # token-budget-aware truncation
+reza session handoff --session-only     # single session only (old behavior)
+reza session handoff --format json      # machine-readable
+
+# Search across the entire thread:
+reza session search "JWT" 
+reza session search "circular import" --id claude-abc12345
 ```
 
 ---

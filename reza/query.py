@@ -1,9 +1,12 @@
-"""Query functions — overview, file search, recent changes, sessions."""
+"""Query functions — overview, file search, recent changes, sessions, unified context."""
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .schema import get_connection
+
+logger = logging.getLogger(__name__)
 
 
 def get_overview(db: Path) -> Dict[str, Any]:
@@ -112,4 +115,71 @@ def get_file_info(db: Path, file_path: str) -> Optional[Dict]:
             (result["path"],),
         ).fetchall()
         result["recent_changes"] = [dict(c) for c in changes]
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Unified context: conversation + code graph
+# ---------------------------------------------------------------------------
+
+
+def get_unified_context(
+    db: Path,
+    changed_files: Optional[List[str]] = None,
+    search_query: Optional[str] = None,
+    session_id: Optional[str] = None,
+    max_depth: int = 3,
+    turn_limit: int = 5,
+) -> Dict[str, Any]:
+    """Build a combined context packet from conversation history AND code graph.
+
+    This is the key differentiator over code-review-graph: LLMs get both
+    structural code awareness (blast radius, signatures) and relevant
+    conversation history (what was discussed about affected code) in one query.
+
+    Returns:
+        - graph_context: impacted files, signatures, test gaps (if graph built)
+        - conversation_context: relevant conversation turns matching the query
+        - file_discussions: conversation turns mentioning impacted files
+    """
+    result: Dict[str, Any] = {
+        "graph_context": None,
+        "conversation_context": [],
+        "file_discussions": {},
+    }
+
+    if changed_files:
+        try:
+            from .graph.store import GraphStore
+            from .graph.impact import get_compact_context
+            store = GraphStore(db)
+            stats = store.get_stats()
+            if stats.total_nodes > 0:
+                result["graph_context"] = get_compact_context(
+                    store, changed_files, max_depth=max_depth,
+                )
+            store.close()
+        except (ImportError, Exception) as e:
+            logger.debug("Graph context unavailable: %s", e)
+
+    if search_query:
+        from .turns import search_turns
+        result["conversation_context"] = search_turns(
+            db, search_query, session_id=session_id, limit=turn_limit,
+        )
+
+    impacted_files: List[str] = []
+    if result["graph_context"]:
+        impacted_files = result["graph_context"].get("impacted_files", [])
+
+    if impacted_files:
+        file_discussions: Dict[str, List[Dict]] = {}
+        for fp in impacted_files[:10]:
+            basename = Path(fp).name
+            from .turns import search_turns
+            hits = search_turns(db, basename, session_id=session_id, limit=3)
+            if hits:
+                file_discussions[fp] = hits
+        result["file_discussions"] = file_discussions
+
     return result

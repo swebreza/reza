@@ -17,6 +17,13 @@ from .init_db import (
 )
 from .schema import get_connection, find_db_path, DB_DIR
 
+_graph_available = False
+try:
+    from .graph.parser import SUPPORTED_EXTENSIONS as _GRAPH_EXTS
+    _graph_available = True
+except ImportError:
+    _GRAPH_EXTS = set()
+
 
 def _get_session_id(db: Path) -> str:
     """Return the most recent active session ID, or empty string."""
@@ -121,6 +128,20 @@ def _delete_file(db: Path, abs_path: str, project_root: str):
         pass
 
 
+def _update_graph_for_file(db: Path, abs_path: str, project_root: str, deleted: bool = False):
+    """Incrementally update the code graph for a single file change."""
+    if not _graph_available:
+        return
+    ext = Path(abs_path).suffix.lower()
+    if ext not in _GRAPH_EXTS:
+        return
+    try:
+        from .graph.builder import update_single_file
+        update_single_file(abs_path, project_root, db)
+    except Exception:
+        pass
+
+
 def _should_ignore(path_str: str) -> bool:
     """Return True if any component of the path is in IGNORE_DIRS."""
     parts = Path(path_str).parts
@@ -169,21 +190,30 @@ def start_watcher(project_dir: str, db: Path):
                 return
             if not self._skip(path):
                 _upsert_file(self.db, path, self.project_root, "created")
+                _update_graph_for_file(self.db, path, self.project_root)
 
         def on_modified(self, event):
             if not event.is_directory and not self._skip(event.src_path):
                 _upsert_file(self.db, event.src_path, self.project_root, "modified")
+                _update_graph_for_file(self.db, event.src_path, self.project_root)
 
         def on_deleted(self, event):
             if not event.is_directory and not self._skip(event.src_path):
                 _delete_file(self.db, event.src_path, self.project_root)
+                _update_graph_for_file(
+                    self.db, event.src_path, self.project_root, deleted=True,
+                )
 
         def on_moved(self, event):
             if not event.is_directory:
                 if not self._skip(event.src_path):
                     _delete_file(self.db, event.src_path, self.project_root)
+                    _update_graph_for_file(
+                        self.db, event.src_path, self.project_root, deleted=True,
+                    )
                 if not self._skip(event.dest_path):
                     _upsert_file(self.db, event.dest_path, self.project_root, "moved")
+                    _update_graph_for_file(self.db, event.dest_path, self.project_root)
 
     handler = _Handler(project_dir, db)
     observer = Observer()

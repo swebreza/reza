@@ -11,7 +11,7 @@ authors = [
 ]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 keywords = [
     "llm", "context", "claude", "codex", "cursor", "aider", "kilocode",
     "ai-tools", "developer-tools", "sqlite", "project-awareness", "session"
@@ -37,6 +37,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+graph = [
+    "tree-sitter>=0.23.0,<1",
+    "tree-sitter-language-pack>=0.3.0,<1",
+    "networkx>=3.2,<4",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
