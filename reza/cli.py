@@ -915,6 +915,173 @@ def graph_search(ctx, query, limit, as_json):
     console.print(table)
 
 
+@graph.command("export")
+@click.option("--limit", default=1000, show_default=True,
+              help="Max nodes to return (0 = no limit).")
+@click.option("--kinds", default="Class,Function,Test",
+              show_default=True,
+              help="Comma-separated node kinds to include (e.g. File,Class,Function,Test).")
+@click.option("--session-id", "session_id", default=None,
+              help="Include session overlay for this session (hot/locked/blast states).")
+@click.pass_context
+def graph_export(ctx, limit, kinds, session_id):
+    """Export graph nodes + edges as JSON for tooling (VS Code extension, etc).
+
+    \b
+    Examples:
+        reza graph export
+        reza graph export --kinds Class,Function,Test --limit 500
+        reza graph export --session-id claude-abc123
+    """
+    db = _require_db(ctx)
+
+    try:
+        from .graph.store import GraphStore
+    except ImportError:
+        err_console.print(
+            "[red]Graph dependencies not installed.[/red]\n"
+            "Install with: [bold]pip install reza[graph][/bold]"
+        )
+        ctx.exit(1)
+        return
+
+    store = GraphStore(db)
+    stats = store.get_stats()
+
+    if stats.total_nodes == 0:
+        click.echo(json.dumps({"nodes": [], "edges": [], "stats": {}, "session": None}))
+        store.close()
+        return
+
+    allowed_kinds = {k.strip() for k in kinds.split(",") if k.strip()}
+    all_nodes = store.get_all_nodes(exclude_files="File" not in allowed_kinds)
+    filtered = [n for n in all_nodes if n.kind in allowed_kinds]
+
+    if limit > 0:
+        filtered = filtered[:limit]
+
+    node_qns = {n.qualified_name for n in filtered}
+
+    all_edges_raw = store._conn.execute(
+        "SELECT kind, source_qualified, target_qualified, file_path, line, confidence FROM code_edges"
+    ).fetchall()
+    edges_out = [
+        {
+            "kind": r["kind"],
+            "source": r["source_qualified"],
+            "target": r["target_qualified"],
+            "file_path": r["file_path"],
+            "line": r["line"],
+            "confidence": r["confidence"],
+        }
+        for r in all_edges_raw
+        if r["source_qualified"] in node_qns and r["target_qualified"] in node_qns
+    ]
+
+    degree: dict[str, int] = {}
+    for e in edges_out:
+        degree[e["source"]] = degree.get(e["source"], 0) + 1
+        degree[e["target"]] = degree.get(e["target"], 0) + 1
+
+    session_info = None
+    hot_files: set[str] = set()
+    locked_files: set[str] = set()
+
+    if session_id:
+        with get_connection(db) as conn:
+            sess = conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if sess:
+                files_mod = sess["files_modified"] or ""
+                hot_files = {f.strip() for f in files_mod.split(",") if f.strip()}
+                locks_rows = conn.execute(
+                    "SELECT file_path FROM file_locks WHERE session_id = ?", (session_id,)
+                ).fetchall()
+                locked_files = {r["file_path"] for r in locks_rows}
+                recent_changes = conn.execute(
+                    "SELECT DISTINCT file_path FROM changes WHERE session_id = ?",
+                    (session_id,),
+                ).fetchall()
+                hot_files |= {r["file_path"] for r in recent_changes}
+                session_info = {
+                    "id": sess["id"],
+                    "llm_name": sess["llm_name"],
+                    "status": sess["status"],
+                    "working_on": sess["working_on"],
+                    "hot_files": sorted(hot_files),
+                    "locked_files": sorted(locked_files),
+                }
+    else:
+        with get_connection(db) as conn:
+            active = conn.execute(
+                "SELECT * FROM sessions WHERE status = 'active' ORDER BY started_at DESC LIMIT 1"
+            ).fetchone()
+            if active:
+                files_mod = active["files_modified"] or ""
+                hot_files = {f.strip() for f in files_mod.split(",") if f.strip()}
+                locks_rows = conn.execute(
+                    "SELECT file_path FROM file_locks WHERE session_id = ?", (active["id"],)
+                ).fetchall()
+                locked_files = {r["file_path"] for r in locks_rows}
+                recent_changes = conn.execute(
+                    "SELECT DISTINCT file_path FROM changes WHERE session_id = ?",
+                    (active["id"],),
+                ).fetchall()
+                hot_files |= {r["file_path"] for r in recent_changes}
+                session_info = {
+                    "id": active["id"],
+                    "llm_name": active["llm_name"],
+                    "status": active["status"],
+                    "working_on": active["working_on"],
+                    "hot_files": sorted(hot_files),
+                    "locked_files": sorted(locked_files),
+                }
+
+    def node_state(fp: str) -> str:
+        if fp in locked_files:
+            return "locked"
+        if fp in hot_files:
+            return "hot"
+        return "cold"
+
+    nodes_out = [
+        {
+            "id": n.qualified_name,
+            "name": n.name,
+            "kind": n.kind,
+            "file_path": n.file_path,
+            "line_start": n.line_start,
+            "line_end": n.line_end,
+            "language": n.language,
+            "params": n.params,
+            "return_type": n.return_type,
+            "is_test": n.is_test,
+            "parent_name": n.parent_name,
+            "degree": degree.get(n.qualified_name, 0),
+            "state": node_state(n.file_path),
+        }
+        for n in filtered
+    ]
+
+    store.close()
+
+    click.echo(json.dumps({
+        "nodes": nodes_out,
+        "edges": edges_out,
+        "stats": {
+            "total_nodes": stats.total_nodes,
+            "total_edges": stats.total_edges,
+            "nodes_by_kind": stats.nodes_by_kind,
+            "edges_by_kind": stats.edges_by_kind,
+            "languages": stats.languages,
+            "files_count": stats.files_count,
+            "last_updated": stats.last_updated,
+        },
+        "session": session_info,
+    }, indent=None))
+
+
 def _git_changed_files() -> list[str]:
     """Detect changed files via git diff (staged + unstaged)."""
     import subprocess

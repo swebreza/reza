@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none';
+             script-src 'nonce-{{NONCE}}' https://d3js.org;
+             style-src 'nonce-{{NONCE}}';
+             img-src data:;
+             font-src 'none';"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reza Code Graph</title>
+
+  <style nonce="{{NONCE}}">
+    /* ---- Reset / Base ---- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --text-dim:  #8b949e;
+
+      /* node state colours */
+      --col-locked: #ff4c4c;
+      --col-hot:    #f97316;
+      --col-warm:   #eab308;
+      --col-blast:  #a78bfa;
+      --col-cold:   #4b5563;
+      --col-cold-stroke: #6b7280;
+
+      /* tool colours */
+      --col-cursor:     #9b59b6;
+      --col-claude:     #e8501a;
+      --col-codex:      #3b82f6;
+      --col-steel:      #6b7280;
+
+      /* edge kind colours */
+      --edge-calls:     #3b82f6;
+      --edge-imports:   #22c55e;
+      --edge-inherits:  #a78bfa;
+      --edge-contains:  #6b7280;
+      --edge-tested-by: #f59e0b;
+      --edge-default:   #4b5563;
+
+      --sidebar-w: 280px;
+      --toolbar-h: 48px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---- Toolbar ---- */
+    #toolbar {
+      height: var(--toolbar-h);
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    #toolbar .logo {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--text);
+      letter-spacing: .5px;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+
+    #toolbar .sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
+
+    #search-box {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      padding: 4px 10px;
+      width: 180px;
+      outline: none;
+    }
+    #search-box:focus { border-color: #58a6ff; }
+    #search-box::placeholder { color: var(--text-dim); }
+
+    .filter-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .filter-label { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text-dim);
+      user-select: none;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .chip.active { background: #1f6feb44; border-color: #58a6ff; color: var(--text); }
+    .chip .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+    #btn-refresh {
+      margin-left: auto;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex; align-items: center; gap: 5px;
+      white-space: nowrap;
+    }
+    #btn-refresh:hover { border-color: #58a6ff; color: #58a6ff; }
+
+    /* ---- Main layout ---- */
+    #main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ---- SVG canvas ---- */
+    #graph-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    svg#graph {
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      display: block;
+      cursor: grab;
+    }
+    svg#graph:active { cursor: grabbing; }
+
+    /* ---- Tooltip ---- */
+    #tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      max-width: 260px;
+      opacity: 0;
+      transition: opacity .15s;
+      z-index: 10;
+    }
+    #tooltip .tt-name { font-weight: 600; font-size: 13px; word-break: break-all; }
+    #tooltip .tt-kind { color: var(--text-dim); font-size: 11px; margin-bottom: 4px; }
+    #tooltip .tt-file { color: #58a6ff; font-size: 11px; word-break: break-all; }
+    #tooltip .tt-state { margin-top: 4px; }
+    #tooltip .tt-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    /* ---- Sidebar ---- */
+    #sidebar {
+      width: var(--sidebar-w);
+      background: var(--bg2);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sidebar-section {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .session-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .session-badge .pulse {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .5; transform: scale(.7); }
+    }
+
+    .stat-row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
+    .stat-label { color: var(--text-dim); font-size: 11px; }
+    .stat-val { font-weight: 600; font-size: 12px; }
+
+    .histogram {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .hbar { height: 100%; min-width: 2px; border-radius: 0; }
+
+    #hot-files-list, #locked-files-list {
+      overflow-y: auto;
+      max-height: 120px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 0;
+      font-size: 11px;
+      color: var(--text-dim);
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .file-item:hover { color: var(--text); }
+    .file-item .fi-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .file-item .fi-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    #no-session {
+      padding: 14px;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-style: italic;
+      text-align: center;
+    }
+
+    /* ---- Legend ---- */
+    #legend { padding: 10px 14px; border-top: 1px solid var(--border); margin-top: auto; }
+    .legend-title { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .legend-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; color: var(--text-dim); }
+    .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .legend-line { width: 20px; height: 2px; flex-shrink: 0; border-radius: 1px; }
+
+    /* ---- Loading / error ---- */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 20;
+    }
+    #overlay.hidden { display: none; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #overlay-msg { color: var(--text-dim); font-size: 13px; }
+    #overlay-err { color: #ff4c4c; font-size: 12px; max-width: 360px; text-align: center; }
+
+    /* ---- D3 elements ---- */
+    .edge { stroke-opacity: .55; }
+    .edge.hidden { stroke-opacity: 0; pointer-events: none; }
+    .node circle { stroke-width: 1.5; cursor: pointer; }
+    .node circle.dimmed { opacity: .15; }
+    .node text {
+      font-size: 9px;
+      fill: var(--text-dim);
+      pointer-events: none;
+      user-select: none;
+    }
+    .node text.dimmed { opacity: .15; }
+
+    @keyframes locked-pulse {
+      0%, 100% { r: var(--r); opacity: 1; }
+      50%       { r: calc(var(--r) + 4px); opacity: .4; }
+    }
+
+    .locked-ring {
+      fill: none;
+      stroke: var(--col-locked);
+      stroke-width: 2;
+      animation: locked-pulse 1.2s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================ TOOLBAR -->
+<div id="toolbar">
+  <span class="logo">⬡ Reza Graph</span>
+  <div class="sep"></div>
+
+  <input
+    id="search-box"
+    type="text"
+    placeholder="Search nodes…"
+    autocomplete="off"
+  />
+
+  <div class="sep"></div>
+  <div class="filter-group">
+    <span class="filter-label">Nodes:</span>
+    <span class="chip active" data-filter="kind" data-val="Class"><span class="dot" style="background:#7c3aed"></span>Class</span>
+    <span class="chip active" data-filter="kind" data-val="Function"><span class="dot" style="background:#0ea5e9"></span>Func</span>
+    <span class="chip active" data-filter="kind" data-val="Test"><span class="dot" style="background:#f59e0b"></span>Test</span>
+    <span class="chip" data-filter="kind" data-val="File"><span class="dot" style="background:#6b7280"></span>File</span>
+  </div>
+
+  <div class="sep"></div>
+  <div class="filter-group">
+    <span class="filter-label">Edges:</span>
+    <span class="chip active" data-filter="edge" data-val="CALLS"><span class="dot" style="background:var(--edge-calls)"></span>Calls</span>
+    <span class="chip active" data-filter="edge" data-val="IMPORTS_FROM"><span class="dot" style="background:var(--edge-imports)"></span>Import</span>
+    <span class="chip active" data-filter="edge" data-val="INHERITS"><span class="dot" style="background:var(--edge-inherits)"></span>Inherit</span>
+    <span class="chip" data-filter="edge" data-val="CONTAINS"><span class="dot" style="background:var(--edge-contains)"></span>Contains</span>
+    <span class="chip active" data-filter="edge" data-val="TESTED_BY"><span class="dot" style="background:var(--edge-tested-by)"></span>Tested</span>
+  </div>
+
+  <button id="btn-refresh" title="Refresh graph data">↺ Refresh</button>
+</div>
+
+<!-- ============================================================ MAIN -->
+<div id="main">
+  <!-- GRAPH CANVAS -->
+  <div id="graph-wrap">
+    <svg id="graph">
+      <defs>
+        <marker id="arrow-calls"    markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="var(--edge-calls)" opacity=".7" />
+        </marker>
+        <marker id="arrow-imports"  markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="var(--edge-imports)" opacity=".7" />
+        </marker>
+        <marker id="arrow-inherits" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="var(--edge-inherits)" opacity=".7" />
+        </marker>
+        <marker id="arrow-default"  markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="var(--edge-default)" opacity=".5" />
+        </marker>
+      </defs>
+      <g id="canvas">
+        <g id="edges-layer"></g>
+        <g id="nodes-layer"></g>
+      </g>
+    </svg>
+
+    <!-- Loading / error overlay -->
+    <div id="overlay">
+      <div class="spinner"></div>
+      <div id="overlay-msg">Loading code graph…</div>
+      <div id="overlay-err"></div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <span>Session</span>
+      <span id="session-time" style="font-weight:400;font-size:10px;"></span>
+    </div>
+
+    <div id="session-content">
+      <div id="no-session">No active session detected.</div>
+    </div>
+
+    <div id="legend">
+      <div class="legend-title">Node states</div>
+      <div class="legend-row"><span class="legend-dot" style="background:var(--col-locked)"></span>Locked by session</div>
+      <div class="legend-row"><span class="legend-dot" style="background:var(--col-hot)"></span>Hot — modified this session</div>
+      <div class="legend-row"><span class="legend-dot" style="background:var(--col-blast)"></span>Blast radius impact</div>
+      <div class="legend-row"><span class="legend-dot" style="background:var(--col-cold)"></span>Cold — no activity</div>
+      <div class="legend-title" style="margin-top:8px;">Edges</div>
+      <div class="legend-row"><span class="legend-line" style="background:var(--edge-calls)"></span>Calls</div>
+      <div class="legend-row"><span class="legend-line" style="background:var(--edge-imports)"></span>Imports</div>
+      <div class="legend-row"><span class="legend-line" style="background:var(--edge-inherits)"></span>Inherits</div>
+      <div class="legend-row"><span class="legend-line" style="background:var(--edge-tested-by)"></span>Tested by</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ D3 -->
+<script nonce="{{NONCE}}" src="https://d3js.org/d3.v7.min.js"></script>
+<script nonce="{{NONCE}}" src="graph.js"></script>
+</body>
+</html>
