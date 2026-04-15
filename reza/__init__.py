@@ -13,7 +13,7 @@ Usage:
     reza export      # Export context to markdown/JSON
 """
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 __author__ = "Suweb Reza"
 __license__ = "MIT"
 

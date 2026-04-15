@@ -38,8 +38,11 @@ Then give it to your tool:
 Regardless of which tool you use, the workflow is the same:
 
 ```bash
+# 0. One-time: install the Claude Code Stop hook (auto-syncs every turn, zero tokens):
+reza install-claude-hook
+
 # 1. Check for work from other AI tools:
-reza session handoff
+reza session handoff --budget 8000   # structured brief ready to paste
 
 # 2. Start your session:
 reza session start --llm YOUR_TOOL --task "what you are doing"
@@ -52,8 +55,7 @@ reza session save --id TOOL-XXXXXXXX \
   --summary "what was done" \
   --context "key decisions, next steps, what failed"
 
-# 4b. For full chat continuity, store or ingest the raw transcript:
-reza session turns add --id TOOL-XXXXXXXX --role assistant --content "what changed, what is next"
+# 4b. For tools other than Claude, ingest exported transcripts:
 reza ingest .reza/handoffs/tool-20260410.json
 
 # 4c. Recover older, relevant context on demand:

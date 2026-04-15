@@ -76,12 +76,17 @@ reza session save --id claude-XXXXXXXX \
   --files "src/auth.py, src/models.py"
 ```
 
-For turn-by-turn continuity, append turns directly or ingest an exported transcript:
+## Step 5b — Install the Stop hook (one-time, recommended)
 
 ```bash
-reza session turns add --id claude-XXXXXXXX --role assistant --content "what changed, what is next"
-reza ingest .reza/handoffs/claude-20260410.json
+reza install-claude-hook
 ```
+
+This writes a Stop hook to `~/.claude/settings.json`. After every response, Claude Code
+reads its `.jsonl` conversation file and syncs new turns to reza automatically.
+**Zero tokens consumed.** Works even when Claude hits its context limit.
+
+You never need to call `reza session turns add` manually again.
 
 ## Step 6 — End your session
 
@@ -112,9 +117,10 @@ reza export --format context  # compact LLM prompt format
 
 1. **Query first, code second.** Never start reading files before running `reza query`.
 2. **Use `--find` instead of glob.** `reza query --find auth` is faster and more accurate than globbing.
-3. **Save progress before ending.** Use `reza session save` when switching tasks or tools.
-4. **Check handoff.** Always run `reza session handoff` at the start of a session.
+3. **Install the Stop hook once.** `reza install-claude-hook` — turns are then saved automatically after every response, including at context limit.
+4. **Check handoff at session start.** Always run `reza session handoff` — if a previous session exists, its full turn history is ready to paste.
 5. **Search old chat when needed.** Use `reza session search` instead of relying only on recency.
+6. **Save a summary when switching tools.** `reza session save --summary "..."` gives the next tool human-readable context in addition to the raw turns.
 
 ## File info
 

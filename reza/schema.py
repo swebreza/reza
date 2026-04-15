@@ -161,11 +161,31 @@ def get_db_path(project_dir: Optional[str] = None) -> Path:
     return Path(project_dir or os.getcwd()).resolve() / DB_DIR / DB_NAME
 
 
+def _auto_migrate(conn: sqlite3.Connection) -> None:
+    """Silently apply missing schema tables to legacy databases.
+
+    Checks for the presence of the `conversation_turns` table (added in v0.2.0).
+    If absent, runs the full idempotent schema — all CREATE IF NOT EXISTS statements
+    are safe to re-run on a DB that already has the base tables.
+
+    This lets users with pre-v0.2.0 databases run `reza session search`,
+    `reza session handoff`, and `reza sync-claude` without first running
+    `reza upgrade`, instead of crashing with OperationalError.
+    """
+    try:
+        conn.execute("SELECT 1 FROM conversation_turns LIMIT 1")
+    except sqlite3.OperationalError:
+        # Legacy DB — apply new tables + indexes + FTS + triggers
+        conn.executescript(SCHEMA)
+        conn.commit()
+
+
 @contextmanager
 def get_connection(db_path: Optional[Path] = None) -> Generator[sqlite3.Connection, None, None]:
     """Context manager that yields a configured SQLite connection.
 
     Raises FileNotFoundError if no DB is found and db_path is not provided.
+    Auto-migrates legacy databases missing the v0.2.0+ schema on first access.
     """
     if db_path is None:
         db_path = find_db_path()
@@ -177,6 +197,7 @@ def get_connection(db_path: Optional[Path] = None) -> Generator[sqlite3.Connecti
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    _auto_migrate(conn)
     try:
         yield conn
         conn.commit()

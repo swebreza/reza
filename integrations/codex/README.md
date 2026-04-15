@@ -64,22 +64,37 @@ The assistant can then answer questions like "what files handle auth?" accuratel
 
 ## Cross-LLM handoff with Codex
 
-```bash
-# Check what Claude / Cursor left off:
-reza session handoff
-reza session search "auth middleware"
+### Picking up from Claude (recommended workflow)
 
-# Save your Codex session:
+If you installed the Claude Code Stop hook (`reza install-claude-hook`), every Claude turn was already synced automatically — including turns saved right at Claude's context limit.
+
+```bash
+# Get the handoff brief to paste into Codex:
+reza session handoff --budget 8000
+# → Full markdown: what was being done, recent conversation, files modified, pick-up point
+
+# Search specific older context:
+reza session search "auth middleware"
+reza session search "JWT" --id claude-XXXXXXXX
+```
+
+Paste the `reza session handoff` output as your first Codex message. Codex has full context.
+
+### Saving your Codex session
+
+```bash
 reza session start --llm codex --task "..."
 reza session save --id codex-XXXXXXXX --summary "..." --context "..."
-reza session turns add --id codex-XXXXXXXX --role assistant --content "what you decided / what is next"
 reza session end --id codex-XXXXXXXX
 
-# Or ingest a full exported transcript when Codex wrote chat history elsewhere:
+# Or ingest a full exported Codex transcript:
 reza ingest .reza/handoffs/codex-20260410.json
+```
 
-# Resume from Codex in Claude:
-reza session handoff    # shows summary + recent turns
+### Resuming from Codex back in Claude
+
+```bash
+reza session handoff    # shows all interrupted sessions — Claude sees Codex's too
 reza session search "keyword" --id codex-XXXXXXXX
 ```
 

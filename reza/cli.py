@@ -405,6 +405,9 @@ def session_start(ctx, llm, task, tags):
     db = _require_db(ctx)
     from .session import start_session
     session_id = start_session(db, llm, task, tags)
+    # Write current session ID so Stop hook can find it without any args
+    current_session_file = db.parent / "current_session"
+    current_session_file.write_text(session_id, encoding="utf-8")
     console.print(f"[bold green]Session started:[/bold green] [cyan]{session_id}[/cyan]")
     console.print(f"  LLM  : {llm}")
     console.print(f"  Task : {task or '(not set)'}")
@@ -663,6 +666,200 @@ def ingest(ctx, file_path, session_id):
     except ValueError as e:
         err_console.print(f"[red]Error:[/red] {e}")
         ctx.exit(1)
+
+
+# ─────────────────────────────────────────────
+# sync-claude
+# ─────────────────────────────────────────────
+
+@main.command("sync-claude")
+@click.argument("jsonl_path", required=False, default=None,
+                metavar="JSONL_PATH")
+@click.option("--session-id", default=None,
+              help="Reza session ID to sync into (auto-detected if omitted).")
+@click.option("--from-hook", is_flag=True,
+              help="Read transcript_path (and optional cwd) from stdin JSON "
+                   "(Claude Code Stop hook mode — no token cost).")
+@click.option("--json", "as_json", is_flag=True, help="Output result as JSON.")
+@click.pass_context
+def sync_claude(ctx, jsonl_path, session_id, from_hook, as_json):
+    """Sync Claude's conversation file into reza — zero tokens needed.
+
+    \b
+    Run manually:
+        reza sync-claude ~/.claude/projects/HASH/SESSION.jsonl
+        reza sync-claude ~/.claude/projects/HASH/SESSION.jsonl --session-id claude-abc123
+
+    \b
+    Called automatically by Claude Code Stop hook (reads stdin JSON):
+        reza sync-claude --from-hook
+
+    \b
+    The command is idempotent: re-running it only appends new turns.
+    """
+    from .claude_sync import sync_claude_session
+    from .schema import find_db_path
+
+    if from_hook:
+        # Claude Code Stop hook passes JSON on stdin:
+        # {"session_id": "...", "transcript_path": "...", "cwd": "..."}
+        try:
+            payload = json.loads(sys.stdin.read())
+        except (json.JSONDecodeError, EOFError):
+            payload = {}
+        jsonl_path = payload.get("transcript_path") or jsonl_path
+        hook_cwd = payload.get("cwd")
+        if hook_cwd:
+            db = find_db_path(hook_cwd)
+        else:
+            db = find_db_path()
+    else:
+        db = find_db_path()
+
+    if not jsonl_path:
+        err_console.print(
+            "[red]Error:[/red] Provide JSONL_PATH or use --from-hook "
+            "(which reads it from stdin)."
+        )
+        ctx.exit(1)
+        return
+
+    if db is None:
+        # No reza DB in scope — exit silently so Stop hook never breaks Claude
+        if not as_json:
+            err_console.print("[dim]reza: no .reza/context.db found, skipping sync[/dim]")
+        if as_json:
+            click.echo(json.dumps({"skipped": True, "reason": "no db found"}))
+        return
+
+    try:
+        result = sync_claude_session(db, Path(jsonl_path), reza_session_id=session_id)
+    except FileNotFoundError as e:
+        if as_json:
+            click.echo(json.dumps({"error": str(e)}))
+        else:
+            err_console.print(f"[red]Error:[/red] {e}")
+        ctx.exit(1)
+        return
+    except Exception as e:
+        # Never crash Claude Code — log and exit cleanly
+        if as_json:
+            click.echo(json.dumps({"error": str(e)}))
+        else:
+            err_console.print(f"[red]sync-claude error:[/red] {e}")
+        return
+
+    if as_json:
+        click.echo(json.dumps(result))
+        return
+
+    if result["synced"] == 0:
+        console.print(
+            f"[dim]reza: already up to date ({result['skipped']} turns) "
+            f"— session {result['session_id']}[/dim]"
+        )
+    else:
+        console.print(
+            f"[green]reza: synced {result['synced']} new turn(s)[/green] "
+            f"(+{result['skipped']} already stored) "
+            f"→ session [cyan]{result['session_id']}[/cyan]"
+        )
+
+
+# ─────────────────────────────────────────────
+# install-claude-hook
+# ─────────────────────────────────────────────
+
+@main.command("install-claude-hook")
+@click.option("--uninstall", is_flag=True, help="Remove the reza Stop hook.")
+@click.pass_context
+def install_claude_hook(ctx, uninstall):
+    """Install a Claude Code Stop hook that auto-syncs every conversation.
+
+    \b
+    The hook fires after every Claude response — no tokens needed.
+    It reads Claude's .jsonl file and appends new turns to reza automatically,
+    so the handoff is always fresh even when Claude hits its context limit.
+
+    \b
+    Writes to: ~/.claude/settings.json  (hooks.Stop section)
+
+    \b
+    After installing, start a session and the hook does the rest:
+        reza session start --llm claude --task "your task"
+        # ... work with Claude normally ...
+        reza session handoff     # full history, always up to date
+    """
+    import json as _json
+
+    claude_dir = Path.home() / ".claude"
+    settings_path = claude_dir / "settings.json"
+
+    HOOK_COMMAND = "reza sync-claude --from-hook"
+
+    # Load existing settings or start fresh
+    if settings_path.exists():
+        try:
+            with settings_path.open(encoding="utf-8") as f:
+                settings = _json.load(f)
+        except (_json.JSONDecodeError, OSError):
+            settings = {}
+    else:
+        settings = {}
+
+    hooks = settings.setdefault("hooks", {})
+    stop_hooks = hooks.setdefault("Stop", [])
+
+    if uninstall:
+        # Remove all entries with our command
+        new_stop = []
+        removed = 0
+        for entry in stop_hooks:
+            filtered = [h for h in entry.get("hooks", []) if h.get("command") != HOOK_COMMAND]
+            if len(filtered) < len(entry.get("hooks", [])):
+                removed += 1
+            if filtered:
+                entry["hooks"] = filtered
+                new_stop.append(entry)
+        hooks["Stop"] = new_stop
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        with settings_path.open("w", encoding="utf-8") as f:
+            _json.dump(settings, f, indent=2)
+        if removed:
+            console.print("[yellow]reza Stop hook removed from ~/.claude/settings.json[/yellow]")
+        else:
+            console.print("[dim]No reza Stop hook found — nothing to remove.[/dim]")
+        return
+
+    # Check if already installed
+    for entry in stop_hooks:
+        for h in entry.get("hooks", []):
+            if h.get("command") == HOOK_COMMAND:
+                console.print(
+                    "[green]reza Stop hook already installed.[/green]\n"
+                    "  Every Claude response is auto-synced to reza."
+                )
+                return
+
+    # Add the hook
+    stop_hooks.append({
+        "matcher": "",
+        "hooks": [{"type": "command", "command": HOOK_COMMAND}],
+    })
+
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    with settings_path.open("w", encoding="utf-8") as f:
+        _json.dump(settings, f, indent=2)
+
+    console.print(
+        "[bold green]Claude Code Stop hook installed![/bold green]\n\n"
+        "  Every response Claude gives will be auto-synced to reza.\n"
+        "  No tokens needed — it runs after each reply, not during.\n\n"
+        "  [bold]Next step:[/bold]\n"
+        "    reza session start --llm claude --task \"your task\"\n"
+        "    # ... work normally in Claude Code ...\n"
+        "    reza session handoff   [dim]# full history, always fresh[/dim]"
+    )
 
 
 # ─────────────────────────────────────────────

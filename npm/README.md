@@ -24,9 +24,10 @@ reza watch         # real-time file sync
 reza indexes your project into a local SQLite database (`.reza/context.db`). Any AI tool queries this instead of scanning files — saving 73–94% of tokens per session.
 
 **Key features:**
+- **Auto-sync via Stop hook**: `reza install-claude-hook` — every Claude response synced automatically, even at context limit (zero tokens)
+- **Cross-LLM handoff**: `reza session handoff --budget 8000` — full conversation brief ready to paste into Codex, Cursor, or any tool
 - Searchable raw chat history: `reza session search "keyword"` pulls older relevant context back in
 - Transcript ingest: `reza ingest .reza/handoffs/tool-20260410.json` for tools that export chats
-- Cross-LLM handoff: `reza session handoff` — pick up where Claude/Cursor/Aider left off
 - File locking: `reza claim src/auth.py --session ID` — prevent parallel agent conflicts
 - Real-time sync: file watcher + git hooks keep the DB current automatically
 - Works with Claude Code, Cursor, Kilocode, Aider, Copilot, Continue, Codeium, Codex

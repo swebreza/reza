@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-04-12
+
+### Added
+
+- `reza sync-claude <jsonl_path>` — parse Claude Code's `.jsonl` conversation file and sync all turns to reza; idempotent (only appends new turns)
+- `reza sync-claude --from-hook` — Stop hook mode: reads `transcript_path` + `cwd` from stdin JSON; zero tokens needed from Claude
+- `reza install-claude-hook` — writes a Claude Code Stop hook into `~/.claude/settings.json` so every response is auto-synced after it finishes; `--uninstall` flag to remove
+- `reza session start` now writes session ID to `.reza/current_session` so the Stop hook auto-picks the right session without any arguments
+- `reza/claude_sync.py` — new module: `parse_jsonl` (handles both string and `[{type:"text"}]` content), `sync_claude_session` (idempotent, auto-creates session if needed)
+- 17 new unit tests covering parse edge cases and full sync lifecycle
+
+### Changed
+
+- `reza session start` writes `.reza/current_session` side-effect (backwards-compatible)
+
+---
+
 ## [0.3.0] — 2026-04-12
 
 ### Added

@@ -254,7 +254,10 @@ reza query --json             # Machine-readable JSON output
 # Start a session (get back a session ID)
 reza session start --llm claude --task "implementing JWT auth"
 
-# Save progress
+# Auto-sync Claude Code turns on every response (zero tokens):
+reza install-claude-hook          # one-time: writes ~/.claude/settings.json Stop hook
+
+# Save progress (optional — auto-sync handles turn storage)
 reza session save --id claude-abc12345 \
   --summary "Models and serializers done, starting views" \
   --context "Decided on JWT over sessions — see auth/tokens.py. Avoid circular import in models.py" \
@@ -262,9 +265,15 @@ reza session save --id claude-abc12345 \
 
 # Check for interrupted sessions (cross-LLM handoff)
 reza session handoff
+reza session handoff --budget 8000          # truncate to ~8k tokens
+reza session handoff --format json          # machine-readable
 
 # Search the full raw transcript for relevant older context
 reza session search "jwt middleware" --id claude-abc12345
+
+# Manually sync a Claude Code .jsonl conversation file:
+reza sync-claude ~/.claude/projects/HASH/SESSION.jsonl
+reza sync-claude --from-hook                # Stop hook mode — reads transcript_path from stdin
 
 # Add turns directly or from exported transcripts
 reza session turns add --id claude-abc12345 --role assistant --content "Next: wire auth routes"
@@ -315,6 +324,15 @@ Conflicts are also detected **automatically**:
 - `reza watch` prints a stderr alert the moment a locked file is written by a different session
 - The git pre-commit hook checks staged files against active locks on every commit
 - `reza session end` auto-releases all locks for that session — no dangling locks
+
+### Auto-sync (Claude Code Stop hook)
+
+```bash
+reza install-claude-hook          # Install Stop hook → ~/.claude/settings.json
+reza install-claude-hook --uninstall   # Remove it
+```
+
+Fires after **every** Claude response. Reads Claude's `.jsonl` conversation file and appends new turns to reza automatically. Zero tokens consumed. Runs even when Claude hits its context limit.
 
 ### Git hooks
 
@@ -397,31 +415,62 @@ reza claim src/auth.py --session cursor-xyz789   # ✅ granted
 
 ## Cross-LLM Handoff
 
-This is reza's killer feature. Hand off work between AI tools without re-explaining anything.
+This is reza's killer feature. Hand off work between AI tools without re-explaining anything — even when Claude hits its context limit.
 
-**Scenario**: Claude was implementing auth, hit its context limit. You switch to Cursor.
+**Scenario**: Claude was implementing auth, hit its context limit mid-session. You switch to Codex.
 
-**Without reza**: Cursor starts from scratch. Re-explains stack, re-reads files, may contradict Claude's decisions.
+**Without reza**: Codex starts from scratch. Re-explains stack, re-reads files, may contradict Claude's decisions.
 
-**With reza**:
+**With reza (auto-sync via Stop hook — recommended):**
 
 ```bash
-# In Cursor:
-reza session handoff
-reza session search "JWT" --id claude-abc12345
-
-# Output:
-# Interrupted session: [claude] claude-abc12345
-# Working on: JWT authentication implementation
-# Summary: Models and serializers complete. Starting on views.
-# Context: Decided on JWT over sessions because of multi-service architecture.
-#          Avoid circular import in models.py — use string references.
-#          Next: implement auth/views.py and wire up to urls.py
-# Files modified: auth/models.py, auth/serializers.py
-# Use `reza session search` to pull older, relevant decisions back into context on demand.
+# One-time setup: install the Stop hook
+reza session start --llm claude --task "implementing JWT auth"
+reza install-claude-hook
 ```
 
-Cursor gets the summary, the latest turns, and a direct path to search older raw transcript context without re-explaining anything.
+The hook fires after every Claude response. No tokens needed. Every turn is saved to reza automatically, even when Claude hits its context limit.
+
+```bash
+# Claude hits context limit. Switch to Codex immediately — no waiting.
+reza session handoff --budget 8000
+
+# Output:
+# Session Handoff: claude-abc12345
+# Tool: Claude Code  |  Started: 2026-04-12 14:22  |  Status: interrupted
+#
+# What Was Being Done
+# JWT authentication implementation
+#
+# Summary
+# Models and serializers complete. Starting on views.
+#
+# Recent Conversation (~8000 tokens, most recent first)
+# assistant: Next step is auth/views.py. Use SimpleJWT — avoid session auth...
+# user: should I use sessions or JWT?
+# ...
+#
+# Files Modified
+# - auth/models.py
+# - auth/serializers.py
+#
+# Pick Up From Here
+# Next step is auth/views.py. Use SimpleJWT — avoid session auth...
+```
+
+Paste this into Codex. It picks up exactly where Claude left off.
+
+```bash
+# Search older context on demand (FTS5 — no re-reading files):
+reza session search "JWT" --id claude-abc12345
+reza session search "circular import"
+```
+
+**Manual sync (if Stop hook is not installed):**
+
+```bash
+reza sync-claude ~/.claude/projects/HASH/SESSION.jsonl --session-id claude-abc12345
+```
 
 ---
 
@@ -454,11 +503,12 @@ Your project
 | `conflicts` | Conflict history — when two agents touched the same locked file |
 | `dependencies` | File import relationships |
 
-**Three sync mechanisms:**
+**Four sync mechanisms:**
 
 1. **`reza init`** — full scan on first use
 2. **`reza watch`** — file watcher (Python `watchdog`) for real-time updates
 3. **git pre-commit hook** — updates staged files on every commit
+4. **Claude Code Stop hook** — `reza install-claude-hook` fires after every Claude response; reads Claude's `.jsonl` file and saves new turns to reza automatically, even when context limit is hit
 
 ---
 
@@ -573,7 +623,7 @@ reza init --dir /path/to/project
 
 ## Real-World Example
 
-### Sequential handoff (Claude → Cursor)
+### Sequential handoff (Claude → Codex, context limit mid-session)
 
 ```bash
 # Day 1: Start with Claude Code
@@ -583,22 +633,30 @@ reza init
 
 reza session start --llm claude --task "build subscription billing"
 # → Session started: claude-f3a91b2c
+# → Wrote .reza/current_session
 
-# ... Claude implements Stripe integration ...
+reza install-claude-hook
+# → Claude Code Stop hook installed in ~/.claude/settings.json
 
-reza session save --id claude-f3a91b2c \
-  --summary "Stripe webhook handler done. Subscription model created." \
-  --context "Use Stripe's idempotency keys on all POST calls. Don't use our old PaymentMethod model — deprecated. Next: wire up frontend checkout flow." \
-  --files "billing/models.py, billing/webhooks.py, billing/stripe.py"
+# ... Claude works. Hook fires after every response. Turns saved silently. ...
+# ... Claude hits context limit. No action needed — turns were already synced. ...
 
-# Day 2: Switch to Cursor for frontend work
+# Switch to Codex immediately (no waiting required):
+reza session handoff --budget 8000
+# → Full structured brief: what was done, last 8k tokens of conversation, files modified, pick-up point
+
+# Paste the handoff output into Codex as your first message.
+# Codex picks up exactly where Claude stopped.
+
+# In Codex, save your own session when done:
+reza session start --llm codex --task "frontend checkout flow"
+reza session save --id codex-a1b2c3d4 \
+  --summary "Checkout UI wired to Stripe. Next: webhook confirmation page." \
+  --files "src/components/Checkout.jsx, src/api/stripe.js"
+
+# Back in Claude next day — it sees the Codex session too:
 reza session handoff
-reza session search "idempotency keys" --id claude-f3a91b2c
-# â†’ Summary + recent turns from handoff, plus targeted older context from search
-# → Shows claude-f3a91b2c with full context — zero re-explanation needed
-
-reza session start --llm cursor --task "frontend checkout flow"
-# → Cursor knows the Stripe setup, deprecations, and exactly what to do next
+reza session search "idempotency keys"
 ```
 
 ### Parallel agents (Claude + Aider at the same time)
