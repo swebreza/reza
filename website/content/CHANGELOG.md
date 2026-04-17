@@ -7,6 +7,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.5.0] — 2026-04-17
+
+### Added
+
+- **Cross-tool session import** — `reza sync-cursor` and `reza sync-codex` read Cursor agent transcripts (`~/.cursor/projects/…`) and Codex rollout JSONL (`~/.codex/sessions/…`); `reza sync-all` runs registered sync paths. Imports are **idempotent** (safe to re-run; new turns append only).
+- **`reza.ingest` package** — parsers for Cursor and Codex formats; shared `upsert_imported_session` for deduplicated sessions and turns; file paths harvested from tool calls for **graph scope**.
+- **Session metadata** — `sessions.source_tool`, `sessions.source_path`, `sessions.source_id` (migration on upgrade) for provenance and deduplication.
+- **CLI: `reza session show`**, **`reza session load`** (handoff pack; `--copy` to clipboard with optional `pyperclip`), **`reza session graph`** (files + node scope; `--json` for automation).
+- **Richer `reza session list`** — tool column, turns, tokens, files touched, relative age; `--source`, `--limit`, `--json`.
+- **VS Code graph webview: Sessions panel** — list imported sessions, filter by tool, **Highlight** vs **Subgraph only** on the code graph, sync buttons, **Pack** copies handoff via `reza session load … --copy`.
+
+### Changed
+
+- **`reza ingest`** module layout: legacy file-based ingest lives under `reza.ingest.files`; package `reza.ingest` re-exports public APIs.
+
+### Documentation
+
+- README, npm README, and docs site updated for 0.5.0 (import commands, session scope, VS Code sessions UI).
+
+---
+
 ## [0.4.0] — 2026-04-12
 
 ### Added
@@ -86,8 +107,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## Future
 
-- [ ] VS Code extension with sidebar context view
-- [ ] Web UI for browsing `.reza/context.db`
+- [ ] VS Code extension published to Marketplace (local `.vsix` / repo build today)
+- [ ] Web UI for browsing `.reza/context.db` beyond the docs site
 - [ ] AST-based purpose extraction (more accurate than regex)
 - [ ] `reza diff` — show what changed between sessions
 - [ ] Team sync via shared DB (opt-in)

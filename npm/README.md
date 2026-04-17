@@ -23,7 +23,9 @@ reza watch         # real-time file sync
 
 reza indexes your project into a local SQLite database (`.reza/context.db`). Any AI tool queries this instead of scanning files — saving 73–94% of tokens per session.
 
-**Key features:**
+**Key features (0.5.0):**
+- **Cross-tool chat import**: `reza sync-cursor` and `reza sync-codex` pull Cursor agent JSONL and Codex rollouts from disk into the DB (idempotent).
+- **Session scope**: `reza session list` / `show` / `graph` — see which files and code-graph nodes a session touched; `reza session load <id> --copy` builds a handoff pack for another LLM.
 - **Auto-sync via Stop hook**: `reza install-claude-hook` — every Claude response synced automatically, even at context limit (zero tokens)
 - **Cross-LLM handoff**: `reza session handoff --budget 8000` — full conversation brief ready to paste into Codex, Cursor, or any tool
 - Searchable raw chat history: `reza session search "keyword"` pulls older relevant context back in
@@ -34,7 +36,7 @@ reza indexes your project into a local SQLite database (`.reza/context.db`). Any
 
 ## Full documentation
 
-→ **[github.com/swebreza/reza](https://github.com/swebreza/reza)**
+→ **[github.com/swebreza/reza](https://github.com/swebreza/reza)** (includes a Next.js docs site under `website/`)
 
 ## Troubleshooting
 

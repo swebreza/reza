@@ -65,6 +65,31 @@ To add a new language:
 - Run `pytest` before submitting
 - Run `black reza/ tests/` and `ruff check reza/ tests/` for formatting
 
+## Publishing releases (maintainers)
+
+Version is defined in **`reza/__init__.py`**, **`pyproject.toml`**, and **`npm/package.json`** (`@swebreza/reza`). Keep them in sync.
+
+**PyPI (pip)**
+
+```bash
+pip install build twine
+python -m build
+python -m twine upload dist/reza-0.5.0-py3-none-any.whl dist/reza-0.5.0.tar.gz
+```
+
+Use [trusted publishing](https://docs.pypi.org/trusted-publishers/) or API tokens; never commit secrets.
+
+**npm**
+
+```bash
+cd npm
+npm publish --access public
+```
+
+The npm package is a thin installer: users still need the Python wheel from PyPI (`pip install reza` runs from postinstall).
+
+**Docs site** (`website/`): run `npm run build` before deploy; content is mirrored from `website/content/` (copy `README.md` and `CHANGELOG.md` from the repo root when they change).
+
 ## Reporting Bugs
 
 Open an issue at https://github.com/suwebreza/reza/issues with:

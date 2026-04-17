@@ -17,6 +17,13 @@ const COMMANDS = [
   { cmd: 'Reza: Refresh Graph View', key: undefined, desc: 'Re-query the graph without reopening the panel' },
 ]
 
+const SESSIONS_FEATURES = [
+  <>Imported sessions list — Cursor, Codex, Claude, manual (after <code className="text-teal-DEFAULT text-xs">reza sync-*</code>)</>,
+  <>Filter by source tool; Highlight vs Subgraph only on the graph</>,
+  <>Sync buttons run <code className="text-teal-DEFAULT text-xs">reza sync-cursor</code> / <code className="text-teal-DEFAULT text-xs">reza sync-codex</code> in a terminal</>,
+  <>Pack runs <code className="text-teal-DEFAULT text-xs">reza session load {'<id>'}</code> with <code className="text-teal-DEFAULT text-xs">--copy</code> for handoff</>,
+]
+
 export default function VsCodeExtensionPage() {
   return (
     <DocPage
@@ -38,7 +45,7 @@ export default function VsCodeExtensionPage() {
           <div><span className="text-teal-DEFAULT">npm run build</span></div>
           <div className="pt-2"><span className="text-slate-600"># Package and install</span></div>
           <div><span className="text-teal-DEFAULT">npx vsce package</span></div>
-          <div><span className="text-teal-DEFAULT">code --install-extension</span> <span className="text-slate-300">reza-vscode-0.1.0.vsix</span></div>
+          <div><span className="text-teal-DEFAULT">code --install-extension</span> <span className="text-slate-300">reza-vscode-0.3.0.vsix</span></div>
         </div>
         <p className="text-slate-500 text-sm mt-3">
           Requires the <strong className="text-white">reza CLI</strong> to be installed and <code>reza graph build</code> to have been run in your project.
@@ -65,6 +72,26 @@ export default function VsCodeExtensionPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Sessions browser */}
+      <section className="mb-10">
+        <h2 className="font-syne font-700 text-2xl text-white mb-4">Sessions (cross-tool)</h2>
+        <p className="text-slate-400 mb-4">
+          The graph sidebar includes a <strong className="text-white">Sessions</strong> strip above the live session card.
+          After you run <code className="text-teal-DEFAULT text-xs">reza sync-cursor</code> or{' '}
+          <code className="text-teal-DEFAULT text-xs">reza sync-codex</code> in a project, past chats appear here.
+          Selecting a session either <em>highlights</em> the files and nodes it touched on the full graph, or shows a{' '}
+          <em>subgraph only</em> — your choice via the mode toggle.
+        </p>
+        <ul className="space-y-2 text-slate-400 text-sm">
+          {SESSIONS_FEATURES.map((item, i) => (
+            <li key={i} className="flex items-start gap-3">
+              <span className="mt-1 text-teal-DEFAULT">→</span>
+              <span className="flex-1">{item}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* Graph view */}
@@ -119,7 +146,8 @@ export default function VsCodeExtensionPage() {
             'Drag nodes to rearrange the layout',
             'Search box → highlights matching nodes, dims everything else',
             'Filter chips → toggle node kinds (Class / Function / Test / File) and edge types',
-            'Session sidebar → live view of locked files, hot files, blast radius, and active tool',
+            'Session card → live locked files, hot files, blast radius, and active tool',
+            'Sessions strip → browse imported Cursor/Codex chats and scope the graph',
             'Smooth color transitions (500ms) when session state updates — no simulation restart',
           ].map((item) => (
             <li key={item} className="flex items-start gap-3">

@@ -289,12 +289,21 @@ reza session search "circular import" --id claude-abc12345
 reza sync-all
 reza sync-all --tool aider
 
+# Bulk-import past Cursor / Codex CLI transcripts from disk (idempotent re-sync)
+reza sync-cursor
+reza sync-codex
+
 # Add turns manually or ingest exported transcripts
 reza session turns add --id claude-abc12345 --role assistant --content "Next: wire auth routes"
 reza ingest .reza/handoffs/cursor-export.json
 
-# List all sessions
+# List / inspect sessions (includes imported chats — see source_tool in list)
 reza session list
+reza session list --source cursor --limit 80 --json
+reza session show claude-abc12345
+reza session load claude-abc12345 --copy   # handoff pack → clipboard for another tool
+reza session graph claude-abc12345         # files + code-graph nodes touched
+reza session graph claude-abc12345 --json
 
 # Close a session
 reza session end --id claude-abc12345
@@ -471,12 +480,23 @@ After that — nothing. Every tool's conversation is saved automatically as you 
 |------|------------|
 | **Claude Code** | Stop hook — fires after every response, zero tokens |
 | **Aider** | File-watch on `.aider.chat.history.md` — near-instant |
-| **Codex CLI** | File-watch on `~/.codex/conversations/` |
-| **Cursor** | Drop `.reza/handoffs/export.json` — auto-ingested by `reza watch` |
+| **Codex CLI** | File-watch on `~/.codex/conversations/` **or** `reza sync-codex` for rollouts under `~/.codex/sessions/` |
+| **Cursor** | `reza sync-cursor` for agent JSONL under `~/.cursor/projects/…` **or** drop exports in `.reza/handoffs/` (ingested by `reza watch`) |
 | **Kilocode** | Drop `.reza/handoffs/export.json` — auto-ingested |
 | **Codex Desktop** | Drop `.reza/handoffs/export.json` — auto-ingested |
 
-For GUI tools (Cursor, Kilocode, Codex Desktop), their internal conversation storage is not publicly accessible. Export the chat once and drop it in `.reza/handoffs/` — `reza watch` ingests it automatically. No command needed.
+For GUI tools where you do not use the CLI transcript paths, export the chat once and drop it in `.reza/handoffs/` — `reza watch` ingests it automatically.
+
+### Bulk import: Cursor & Codex on-disk transcripts
+
+If you use **Cursor** or **Codex** from the terminal, reza can **pull** existing agent transcripts into `.reza/context.db` in one shot. Re-running is safe: only new turns are appended.
+
+```bash
+reza sync-cursor    # Cursor agent JSONL under ~/.cursor/projects/
+reza sync-codex     # Codex rollout JSONL under ~/.codex/sessions/
+```
+
+Use `reza session list` to see imported rows (with `source_tool`), and `reza session graph <id>` to map a session to files and graph nodes. In the **VS Code** extension’s graph view, open the **Sessions** strip to highlight or isolate the subgraph for a selected session.
 
 ### Thread linking — three modes
 
@@ -531,7 +551,7 @@ Your project
 |-------|---------------|
 | `project_meta` | Language, framework, project name |
 | `files` | All files with path, type, line count, purpose |
-| `sessions` | LLM sessions with progress and context |
+| `sessions` | LLM sessions with progress, optional `source_tool` / `source_path` / `source_id` for imported chats |
 | `conversation_turns` | Raw per-turn chat history for each session |
 | `conversation_turns_fts` | Full-text search index over raw chat turns |
 | `handoff_drops` | Transcript files already ingested from `.reza/handoffs/` |

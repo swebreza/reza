@@ -2,7 +2,7 @@
   "name": "reza-vscode",
   "displayName": "Reza — Code Graph",
   "description": "Interactive code knowledge graph with live session awareness for reza projects.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "swebreza",
   "license": "MIT",
   "repository": {

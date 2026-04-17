@@ -138,7 +138,7 @@ export default function HomePage() {
             className="mb-8 inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium border border-teal-DEFAULT/30 bg-teal-DEFAULT/10 text-teal-DEFAULT hover:bg-teal-DEFAULT/15 transition-colors"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-teal-DEFAULT animate-pulse-slow" />
-            v0.4.0 — Claude Code Stop hook
+            v0.5.0 — Cursor + Codex session import
             <ChevronRight size={12} />
           </a>
 
