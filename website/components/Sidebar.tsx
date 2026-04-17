@@ -5,55 +5,17 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { NAV_TREE, NavGroup } from '@/lib/nav'
+import { ToolLogo, type ToolKey } from '@/components/ToolLogo'
 import clsx from 'clsx'
 
-function NavSection({ group }: { group: NavGroup }) {
-  const pathname = usePathname()
-  const isActive = group.items.some((i) => pathname === i.href)
-  const [open, setOpen] = useState(isActive || group.defaultOpen !== false)
-
-  return (
-    <div className="mb-4">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-1.5 mb-1 text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-600 hover:text-slate-400 transition-colors"
-      >
-        <span>{group.label}</span>
-        {open
-          ? <ChevronDown size={12} />
-          : <ChevronRight size={12} />}
-      </button>
-      {open && (
-        <ul className="space-y-0.5">
-          {group.items.map((item) => (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                className={clsx(
-                  'sidebar-link',
-                  usePathname() === item.href && 'active'
-                )}
-              >
-                {item.icon && <span className="text-base leading-none">{item.icon}</span>}
-                <span>{item.label}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-// Need to use a wrapper because usePathname can't be called in the map above inside the component scope
-function SidebarLink({ href, label, icon }: { href: string; label: string; icon?: string }) {
+function SidebarLink({ href, label, icon }: { href: string; label: string; icon?: ToolKey }) {
   const pathname = usePathname()
   return (
     <Link
       href={href}
       className={clsx('sidebar-link', pathname === href && 'active')}
     >
-      {icon && <span className="text-base leading-none">{icon}</span>}
+      {icon && <ToolLogo tool={icon} />}
       <span>{label}</span>
     </Link>
   )
@@ -61,7 +23,7 @@ function SidebarLink({ href, label, icon }: { href: string; label: string; icon?
 
 export default function Sidebar() {
   return (
-    <aside className="w-60 flex-shrink-0 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto py-6 pr-4 border-r border-[#1e2730] dark:border-[#1e2730] hidden lg:block">
+    <aside className="w-72 flex-shrink-0 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto py-6 pr-5 border-r border-[#273142] hidden lg:block">
       <nav>
         {NAV_TREE.map((group) => (
           <SidebarGroup key={group.label} group={group} />
@@ -77,13 +39,13 @@ function SidebarGroup({ group }: { group: NavGroup }) {
   const [open, setOpen] = useState(isGroupActive || group.defaultOpen !== false)
 
   return (
-    <div className="mb-5">
+    <div className="mb-6">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-1 mb-1 text-[11px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-600 hover:text-slate-300 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-1 mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-100 transition-colors"
       >
         <span>{group.label}</span>
-        <span className="text-slate-600">
+        <span className="text-slate-500">
           {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </span>
       </button>

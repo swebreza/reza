@@ -37,8 +37,9 @@ export default function TableOfContents() {
   if (headings.length === 0) return null
 
   return (
-    <nav className="w-52 flex-shrink-0 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto py-6 pl-4 hidden xl:block">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-4 px-3">
+    <nav className="w-64 flex-shrink-0 sticky top-20 h-[calc(100vh-5rem)] overflow-y-auto py-4 pl-4 hidden 2xl:block">
+      <div className="rounded-xl border border-[#273142] bg-[#0f1623] p-3">
+      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3 px-2">
         On this page
       </p>
       <ul className="space-y-1">
@@ -51,7 +52,7 @@ export default function TableOfContents() {
                 h.level === 3 ? 'pl-6 pr-3' : 'px-3',
                 active === h.id
                   ? 'text-teal-DEFAULT font-medium'
-                  : 'text-slate-500 hover:text-slate-300 dark:text-slate-600 dark:hover:text-slate-400'
+                  : 'text-slate-500 hover:text-slate-100'
               )}
             >
               {h.text}
@@ -59,6 +60,7 @@ export default function TableOfContents() {
           </li>
         ))}
       </ul>
+      </div>
     </nav>
   )
 }

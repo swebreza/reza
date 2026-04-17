@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Github, Copy, Check, ExternalLink, ChevronRight } from 'lucide-react'
 import Navbar from '@/components/Navbar'
+import { ToolLogo, type ToolKey } from '@/components/ToolLogo'
 
 // ── Stat counter ─────────────────────────────────────────────────────────────
 function useCounter(target: number, duration = 2000, start = false) {
@@ -73,14 +74,15 @@ function CopyButton({ text }: { text: string }) {
 
 // ── Integration card ──────────────────────────────────────────────────────────
 const INTEGRATIONS = [
-  { name: 'Claude Code', href: '/docs/integrations/claude-code', color: '#e8501a', emoji: '🟠', desc: 'Native skill + Stop hook' },
-  { name: 'Cursor', href: '/docs/integrations/cursor', color: '#9b59b6', emoji: '🟣', desc: '.cursorrules auto-inject' },
-  { name: 'Codex', href: '/docs/integrations/codex', color: '#3b82f6', emoji: '🔵', desc: 'System prompt injection' },
-  { name: 'Aider', href: '/docs/integrations/aider', color: '#22c55e', emoji: '🟢', desc: '--read .reza/CONTEXT.md' },
-  { name: 'Kilocode', href: '/docs/integrations/kilocode', color: '#f59e0b', emoji: '🟡', desc: 'Rules file global setup' },
-  { name: 'Copilot', href: '/docs/integrations/copilot', color: '#6366f1', emoji: '🔷', desc: 'copilot-instructions.md' },
-  { name: 'Continue', href: '/docs/integrations/continue', color: '#06b6d4', emoji: '🩵', desc: '@file + config.json' },
-  { name: 'Codeium', href: '/docs/integrations/codeium', color: '#10b981', emoji: '💚', desc: 'Open context in editor' },
+  { name: 'Claude Code', href: '/docs/integrations/claude-code', color: '#e8501a', icon: 'claude' as ToolKey, desc: 'Native skill + Stop hook' },
+  { name: 'Cursor', href: '/docs/integrations/cursor', color: '#9b59b6', icon: 'cursor' as ToolKey, desc: '.cursorrules auto-inject' },
+  { name: 'Codex', href: '/docs/integrations/codex', color: '#3b82f6', icon: 'codex' as ToolKey, desc: 'System prompt injection' },
+  { name: 'Aider', href: '/docs/integrations/aider', color: '#22c55e', icon: 'aider' as ToolKey, desc: '--read .reza/CONTEXT.md' },
+  { name: 'Kilocode', href: '/docs/integrations/kilocode', color: '#f59e0b', icon: 'kilocode' as ToolKey, desc: 'Rules file global setup' },
+  { name: 'GitHub Copilot', href: '/docs/integrations/copilot', color: '#6366f1', icon: 'copilot' as ToolKey, desc: 'copilot-instructions.md' },
+  { name: 'Continue.dev', href: '/docs/integrations/continue', color: '#06b6d4', icon: 'continue' as ToolKey, desc: '@file + config.json' },
+  { name: 'Codeium', href: '/docs/integrations/codeium', color: '#10b981', icon: 'codeium' as ToolKey, desc: 'Open context in editor' },
+  { name: 'VS Code Extension', href: '/docs/vscode-extension', color: '#3b82f6', icon: 'vscode' as ToolKey, desc: 'Interactive graph inside VS Code' },
 ]
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -295,7 +297,9 @@ export default function HomePage() {
                   <div className="w-full h-full rounded-2xl bg-[#131920]" />
                 </div>
                 <div className="relative z-10">
-                  <div className="text-2xl mb-3">{tool.emoji}</div>
+                  <span className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#263141] bg-[#0d1117]">
+                    <ToolLogo tool={tool.icon} />
+                  </span>
                   <div className="font-syne font-600 text-sm text-white mb-1">{tool.name}</div>
                   <div className="text-xs text-slate-500">{tool.desc}</div>
                 </div>

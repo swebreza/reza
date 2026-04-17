@@ -119,6 +119,11 @@ pre code {
   letter-spacing: -0.02em;
 }
 
+.prose p {
+  margin-top: 1.1em;
+  margin-bottom: 1.1em;
+}
+
 .prose a {
   color: #00d4aa;
   text-decoration: none;
@@ -138,6 +143,8 @@ pre code {
 .prose table {
   width: 100%;
   border-collapse: collapse;
+  margin-top: 1.75rem;
+  margin-bottom: 1.75rem;
 }
 .prose th {
   font-family: 'Syne', sans-serif;
@@ -150,26 +157,35 @@ pre code {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.prose ul,
+.prose ol {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
 /* ---- Sidebar ---- */
 .sidebar-link {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 13.5px;
-  color: var(--text-dim, #64748b);
-  transition: color 0.15s, background 0.15s;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #94a3b8;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
   text-decoration: none;
   position: relative;
+  border: 1px solid transparent;
 }
 .sidebar-link:hover {
-  color: var(--text, #0f172a);
-  background: rgba(0, 212, 170, 0.06);
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.45);
+  border-color: rgba(51, 65, 85, 0.75);
 }
 .sidebar-link.active {
   color: #00d4aa;
   background: rgba(0, 212, 170, 0.08);
+  border-color: rgba(0, 212, 170, 0.2);
 }
 .sidebar-link.active::before {
   content: '';
@@ -180,6 +196,10 @@ pre code {
   width: 2px;
   border-radius: 2px;
   background: linear-gradient(180deg, #00d4aa, #7c5cfc);
+}
+
+.sidebar-link img {
+  filter: saturate(1.05);
 }
 
 /* ---- Counter animation ---- */

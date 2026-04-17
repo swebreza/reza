@@ -1,7 +1,9 @@
+import type { ToolKey } from '@/components/ToolLogo'
+
 export interface NavItem {
   label: string
   href: string
-  icon?: string
+  icon?: ToolKey
 }
 
 export interface NavGroup {
@@ -15,50 +17,50 @@ export const NAV_TREE: NavGroup[] = [
     label: 'Getting Started',
     defaultOpen: true,
     items: [
-      { label: 'Introduction', href: '/docs', icon: '📖' },
-      { label: 'Quick Start', href: '/docs/quick-start', icon: '⚡' },
-      { label: 'Installation', href: '/docs/installation', icon: '📦' },
-      { label: 'Configuration', href: '/docs/configuration', icon: '⚙️' },
+      { label: 'Introduction', href: '/docs', icon: 'docs' },
+      { label: 'Quick Start', href: '/docs/quick-start', icon: 'quickstart' },
+      { label: 'Installation', href: '/docs/installation', icon: 'install' },
+      { label: 'Configuration', href: '/docs/configuration', icon: 'config' },
     ],
   },
   {
     label: 'Core Concepts',
     defaultOpen: true,
     items: [
-      { label: 'How It Works', href: '/docs/how-it-works', icon: '🧠' },
-      { label: 'Sessions & Threads', href: '/docs/sessions', icon: '🔗' },
-      { label: 'Parallel Agents', href: '/docs/parallel-agents', icon: '⚡' },
+      { label: 'How It Works', href: '/docs/how-it-works', icon: 'concepts' },
+      { label: 'Sessions & Threads', href: '/docs/sessions', icon: 'sessions' },
+      { label: 'Parallel Agents', href: '/docs/parallel-agents', icon: 'parallel' },
     ],
   },
   {
     label: 'CLI Reference',
     defaultOpen: false,
     items: [
-      { label: 'All Commands', href: '/docs/cli-reference', icon: '💻' },
+      { label: 'All Commands', href: '/docs/cli-reference', icon: 'cli' },
     ],
   },
   {
     label: 'Integrations',
     defaultOpen: false,
     items: [
-      { label: 'Overview', href: '/docs/integrations', icon: '🔌' },
-      { label: 'Claude Code', href: '/docs/integrations/claude-code', icon: '🟠' },
-      { label: 'Cursor', href: '/docs/integrations/cursor', icon: '🟣' },
-      { label: 'Codex', href: '/docs/integrations/codex', icon: '🔵' },
-      { label: 'Aider', href: '/docs/integrations/aider', icon: '🟢' },
-      { label: 'Kilocode', href: '/docs/integrations/kilocode', icon: '🟡' },
-      { label: 'GitHub Copilot', href: '/docs/integrations/copilot', icon: '🔷' },
-      { label: 'Continue.dev', href: '/docs/integrations/continue', icon: '🩵' },
-      { label: 'Codeium', href: '/docs/integrations/codeium', icon: '💚' },
-      { label: 'VS Code Extension', href: '/docs/vscode-extension', icon: '🔷' },
+      { label: 'Overview', href: '/docs/integrations', icon: 'integrations' },
+      { label: 'Claude Code', href: '/docs/integrations/claude-code', icon: 'claude' },
+      { label: 'Cursor', href: '/docs/integrations/cursor', icon: 'cursor' },
+      { label: 'Codex', href: '/docs/integrations/codex', icon: 'codex' },
+      { label: 'Aider', href: '/docs/integrations/aider', icon: 'aider' },
+      { label: 'Kilocode', href: '/docs/integrations/kilocode', icon: 'kilocode' },
+      { label: 'GitHub Copilot', href: '/docs/integrations/copilot', icon: 'copilot' },
+      { label: 'Continue.dev', href: '/docs/integrations/continue', icon: 'continue' },
+      { label: 'Codeium', href: '/docs/integrations/codeium', icon: 'codeium' },
+      { label: 'VS Code Extension', href: '/docs/vscode-extension', icon: 'vscode' },
     ],
   },
   {
     label: 'More',
     defaultOpen: false,
     items: [
-      { label: 'Changelog', href: '/docs/changelog', icon: '📋' },
-      { label: 'Contributing', href: '/docs/contributing', icon: '🤝' },
+      { label: 'Changelog', href: '/docs/changelog', icon: 'changelog' },
+      { label: 'Contributing', href: '/docs/contributing', icon: 'contributing' },
     ],
   },
 ]
