@@ -2,7 +2,7 @@
   "name": "reza-vscode",
   "displayName": "Reza — Code Graph",
   "description": "Interactive code knowledge graph with live session awareness for reza projects.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "swebreza",
   "license": "MIT",
   "repository": {
@@ -15,7 +15,14 @@
   "categories": ["Visualization", "Other"],
   "keywords": ["graph", "code-map", "reza", "llm", "session"],
   "activationEvents": [
-    "workspaceContains:.reza/context.db"
+    "onStartupFinished",
+    "workspaceContains:.reza/context.db",
+    "workspaceContains:.REZA/context.db",
+    "onCommand:reza.showGraph",
+    "onCommand:reza.initProject",
+    "onCommand:reza.initAndBuild",
+    "onCommand:reza.buildGraph",
+    "onCommand:reza.startTracking"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -32,6 +39,18 @@
       {
         "command": "reza.buildGraph",
         "title": "Reza: Build / Refresh Graph"
+      },
+      {
+        "command": "reza.initProject",
+        "title": "Reza: Initialize Project (reza init)"
+      },
+      {
+        "command": "reza.initAndBuild",
+        "title": "Reza: Initialize & Build Graph"
+      },
+      {
+        "command": "reza.startTracking",
+        "title": "Reza: Start Auto-Tracking (watch + hooks)"
       },
       {
         "command": "reza.refreshGraph",
@@ -77,9 +96,11 @@
     "vscode:prepublish": "npm run build",
     "build": "tsc -p tsconfig.json && node build.js",
     "watch": "tsc -p tsconfig.json --watch",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "package": "npm run build && vsce package --no-dependencies"
   },
   "devDependencies": {
+    "@vscode/vsce": "^3.2.2",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.20.0",

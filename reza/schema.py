@@ -47,7 +47,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     summary              TEXT,
     conversation_context TEXT,
     files_modified       TEXT,
-    tags                 TEXT
+    tags                 TEXT,
+    source_tool          TEXT,
+    source_path          TEXT,
+    source_id            TEXT
 );
 
 CREATE TABLE IF NOT EXISTS changes (
@@ -218,13 +221,31 @@ END;
 """
 
 
+def _resolve_reza_data_dir(parent: Path) -> Optional[Path]:
+    """Return the directory that contains context.db (handles .reza vs .REZA on disk)."""
+    exact = parent / DB_DIR
+    if (exact / DB_NAME).exists():
+        return exact
+    try:
+        for child in parent.iterdir():
+            if child.is_dir() and child.name.lower() == DB_DIR.lower():
+                cand = child / DB_NAME
+                if cand.exists():
+                    return child
+    except OSError:
+        pass
+    return None
+
+
 def find_db_path(start_dir: Optional[str] = None) -> Optional[Path]:
     """Walk up the directory tree to find .reza/context.db."""
     current = Path(start_dir or os.getcwd()).resolve()
     while True:
-        candidate = current / DB_DIR / DB_NAME
-        if candidate.exists():
-            return candidate
+        reza_dir = _resolve_reza_data_dir(current)
+        if reza_dir is not None:
+            db = reza_dir / DB_NAME
+            if db.exists():
+                return db
         parent = current.parent
         if parent == current:
             return None
@@ -254,6 +275,27 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         conn.executescript(GRAPH_SCHEMA)
         conn.commit()
+
+    # v0.6.0 — cross-tool session ingestion. Add source_tool + source_path
+    # columns to `sessions` so we can show which tool owns each session and
+    # dedupe re-syncs by source-file path.
+    try:
+        existing_cols = {
+            r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        if "source_tool" not in existing_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN source_tool TEXT")
+        if "source_path" not in existing_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN source_path TEXT")
+        if "source_id" not in existing_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN source_id TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_source "
+            "ON sessions(source_tool, source_path)"
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
 
 
 @contextmanager

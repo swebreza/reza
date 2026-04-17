@@ -1,0 +1,10 @@
+{
+  "name": "reza-extensions",
+  "private": true,
+  "description": "Convenience scripts; real package is reza-vscode/",
+  "scripts": {
+    "build": "npm run build --prefix reza-vscode",
+    "watch": "npm run watch --prefix reza-vscode",
+    "install:extension": "npm install --prefix reza-vscode"
+  }
+}

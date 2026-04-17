@@ -320,28 +320,30 @@ def _extract_inheritance(node, source_bytes: bytes, language: str) -> list[str]:
     return bases
 
 
-def parse_file(file_path: str) -> tuple[list[NodeInfo], list[EdgeInfo]]:
+def parse_file(file_path: str) -> tuple[list[NodeInfo], list[EdgeInfo], str]:
     """Parse a source file and extract structural nodes and edges.
 
-    Returns (nodes, edges) where nodes are code entities (files, classes,
-    functions, etc.) and edges are relationships (calls, imports, etc.).
+    Returns (nodes, edges, content_sha256). Hash is from the same read as parse
+    (single I/O — avoid calling ``file_hash`` on the same path again).
     """
     language = detect_language(file_path)
     if not language:
-        return [], []
+        return [], [], ""
 
     try:
         with open(file_path, "rb") as f:
             source_bytes = f.read()
     except OSError:
         logger.warning("Cannot read file: %s", file_path)
-        return [], []
+        return [], [], ""
+
+    content_hash = hashlib.sha256(source_bytes).hexdigest()
 
     try:
         parser = _get_parser(language)
     except Exception as e:
         logger.warning("No parser for %s: %s", language, e)
-        return [], []
+        return [], [], content_hash
 
     tree = parser.parse(source_bytes)
     root = tree.root_node
@@ -494,7 +496,7 @@ def parse_file(file_path: str) -> tuple[list[NodeInfo], list[EdgeInfo]]:
             _walk(child, parent_class)
 
     _walk(root)
-    return nodes, edges
+    return nodes, edges, content_hash
 
 
 def _find_enclosing_func(

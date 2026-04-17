@@ -48,6 +48,7 @@
       --edge-default:   #4b5563;
 
       --sidebar-w: 280px;
+      --sidebar-w-narrow: 240px;
       --toolbar-h: 48px;
     }
 
@@ -191,6 +192,43 @@
       flex-direction: column;
       overflow: hidden;
       flex-shrink: 0;
+      transition: width .2s ease, height .2s ease;
+      position: relative;
+    }
+
+    /* Collapsed: narrow rail with only the toggle visible. */
+    #sidebar.collapsed {
+      width: 32px;
+    }
+    #sidebar.collapsed > *:not(#sidebar-toggle) {
+      display: none;
+    }
+
+    #sidebar-toggle {
+      position: absolute;
+      top: 8px;
+      left: -14px;
+      width: 28px;
+      height: 28px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+      z-index: 5;
+      transition: color .15s, border-color .15s, transform .2s;
+    }
+    #sidebar-toggle:hover {
+      color: #58a6ff;
+      border-color: #58a6ff;
+    }
+    #sidebar.collapsed #sidebar-toggle {
+      transform: rotate(180deg);
     }
 
     .sidebar-header {
@@ -295,6 +333,7 @@
       justify-content: center;
       gap: 12px;
       z-index: 20;
+      padding: 24px;
     }
     #overlay.hidden { display: none; }
     .spinner {
@@ -306,7 +345,92 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     #overlay-msg { color: var(--text-dim); font-size: 13px; }
-    #overlay-err { color: #ff4c4c; font-size: 12px; max-width: 360px; text-align: center; }
+    #overlay-err { color: #ff4c4c; font-size: 12px; max-width: 520px; text-align: center; white-space: pre-wrap; }
+
+    /* ---- Empty-state / CTA ---- */
+    #cta {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      max-width: 560px;
+      text-align: center;
+    }
+    #cta.visible { display: flex; }
+    #cta .cta-icon {
+      width: 54px; height: 54px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1f6feb, #a78bfa);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 8px 32px rgba(88, 166, 255, .25);
+    }
+    #cta .cta-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    #cta .cta-desc {
+      color: var(--text-dim);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    #cta .cta-path {
+      font-family: 'SF Mono', Menlo, Consolas, monospace;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--text-dim);
+      word-break: break-all;
+      max-width: 100%;
+    }
+    #cta .cta-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 4px;
+    }
+    #cta button {
+      background: #1f6feb;
+      border: 1px solid #1f6feb;
+      color: #fff;
+      padding: 9px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background .15s, border-color .15s;
+    }
+    #cta button:hover { background: #388bfd; border-color: #388bfd; }
+    #cta button.secondary {
+      background: var(--bg3);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    #cta button.secondary:hover { border-color: #58a6ff; color: #58a6ff; background: var(--bg3); }
+    #cta .cta-hint {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 8px;
+      font-style: italic;
+    }
+    #cta .cta-code {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: #58a6ff;
+      text-align: left;
+      width: 100%;
+      max-width: 420px;
+    }
 
     /* ---- D3 elements ---- */
     .edge { stroke-opacity: .55; }
@@ -331,6 +455,198 @@
       stroke: var(--col-locked);
       stroke-width: 2;
       animation: locked-pulse 1.2s ease-in-out infinite;
+    }
+
+    /* ---- Sessions panel ---- */
+    #sessions-panel {
+      border-top: 1px solid var(--border);
+      padding: 10px 12px 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #sessions-panel .sp-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: .3px;
+      color: var(--text);
+    }
+    #sessions-panel .sp-header .sp-title { display: inline-flex; gap: 6px; align-items: center; }
+    #sessions-panel .sp-header .sp-count {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+    #sessions-panel .sp-controls {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    #sessions-panel select,
+    #sessions-panel button {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      outline: none;
+    }
+    #sessions-panel select { padding: 3px 6px; }
+    #sessions-panel button:hover,
+    #sessions-panel select:hover { border-color: #58a6ff; }
+    #sessions-panel .mode-toggle {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #sessions-panel .mode-toggle button {
+      border: none;
+      border-radius: 0;
+      padding: 3px 8px;
+      background: var(--bg3);
+      font-size: 10px;
+    }
+    #sessions-panel .mode-toggle button.active {
+      background: #1f6feb;
+      color: #fff;
+    }
+    #sessions-list {
+      max-height: 320px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-right: 2px;
+    }
+    .sess-row {
+      display: flex;
+      gap: 6px;
+      padding: 6px 8px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--col-steel);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color .1s, background .1s;
+    }
+    .sess-row:hover { border-color: #58a6ff; background: var(--bg3); }
+    .sess-row.active {
+      border-color: #58a6ff;
+      background: rgba(88,166,255,0.08);
+    }
+    .sess-row.tool-cursor { border-left-color: var(--col-cursor); }
+    .sess-row.tool-codex  { border-left-color: var(--col-codex); }
+    .sess-row.tool-claude { border-left-color: var(--col-claude); }
+    .sess-row.tool-manual { border-left-color: var(--col-steel); }
+    .sess-row .sr-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .sess-row .sr-head {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+    .sess-row .sr-head .tool {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .sess-row.tool-cursor .sr-head .tool { color: var(--col-cursor); }
+    .sess-row.tool-codex  .sr-head .tool { color: var(--col-codex); }
+    .sess-row.tool-claude .sr-head .tool { color: var(--col-claude); }
+    .sess-row .sr-body .sr-task {
+      color: var(--text);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sess-row .sr-stats {
+      font-size: 10px;
+      color: var(--text-dim);
+      display: flex;
+      gap: 10px;
+    }
+    .sess-row .sr-stats .stat b { color: var(--text); font-weight: 500; }
+    .sess-row .sr-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .sess-row .sr-actions button {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .sess-row .sr-actions button:hover { color: var(--text); border-color: #58a6ff; }
+    #sessions-empty {
+      color: var(--text-dim);
+      font-size: 11px;
+      text-align: center;
+      padding: 8px 4px;
+      font-style: italic;
+    }
+
+    /* ---- Responsive breakpoints ---- */
+    /* Medium viewport: slightly narrower sidebar, tighter toolbar gaps. */
+    @media (max-width: 1200px) {
+      :root { --sidebar-w: var(--sidebar-w-narrow); }
+      #toolbar { gap: 8px; padding: 0 10px; }
+      #search-box { width: 140px; }
+      .filter-label { display: none; }
+    }
+
+    /* Narrow viewport: sidebar becomes a bottom sheet below the graph. */
+    @media (max-width: 900px) {
+      #main { flex-direction: column; }
+      #sidebar {
+        width: 100% !important;
+        max-height: 45vh;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        flex-shrink: 1;
+      }
+      #sidebar.collapsed {
+        width: 100% !important;
+        max-height: 34px;
+      }
+      #sidebar-toggle {
+        top: -14px;
+        left: 8px;
+        transform: rotate(90deg);
+      }
+      #sidebar.collapsed #sidebar-toggle {
+        transform: rotate(-90deg);
+      }
+      .chip { padding: 2px 6px; font-size: 10px; }
+    }
+
+    /* Very narrow: drop some chip labels, show icons only. */
+    @media (max-width: 600px) {
+      #toolbar { height: auto; padding: 6px 8px; }
+      body { font-size: 12px; }
+      #search-box { width: 100%; min-width: 120px; }
+      #btn-refresh { margin-left: 0; padding: 4px 8px; }
+      #sidebar { max-height: 40vh; }
     }
   </style>
 </head>
@@ -395,11 +711,24 @@
       </g>
     </svg>
 
-    <!-- Loading / error overlay -->
+    <!-- Loading / error / empty-state overlay -->
     <div id="overlay">
-      <div class="spinner"></div>
+      <div class="spinner" id="overlay-spinner"></div>
       <div id="overlay-msg">Loading code graph…</div>
       <div id="overlay-err"></div>
+
+      <!-- CTA (shown when no DB or empty graph) -->
+      <div id="cta">
+        <div class="cta-icon">⬡</div>
+        <div class="cta-title" id="cta-title">Reza has not been set up here yet</div>
+        <div class="cta-desc" id="cta-desc">
+          Initialize Reza in this project to build a code knowledge graph and start
+          tracking your LLM sessions automatically.
+        </div>
+        <div class="cta-path" id="cta-path"></div>
+        <div class="cta-buttons" id="cta-buttons"></div>
+        <div class="cta-hint" id="cta-hint"></div>
+      </div>
     </div>
 
     <!-- Tooltip -->
@@ -408,6 +737,34 @@
 
   <!-- SIDEBAR -->
   <div id="sidebar">
+    <button id="sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar">‹</button>
+
+    <!-- Cross-tool sessions browser -->
+    <div id="sessions-panel">
+      <div class="sp-header">
+        <span class="sp-title">Sessions <span class="sp-count" id="sp-count"></span></span>
+      </div>
+      <div class="sp-controls">
+        <select id="sp-source-filter" title="Filter by originating tool">
+          <option value="all">All tools</option>
+          <option value="cursor">Cursor</option>
+          <option value="codex">Codex</option>
+          <option value="claude">Claude</option>
+          <option value="manual">Manual</option>
+        </select>
+        <div class="mode-toggle" id="sp-mode-toggle"
+             title="How to react when you click a session">
+          <button class="active" data-mode="highlight">Highlight</button>
+          <button data-mode="subgraph">Subgraph only</button>
+        </div>
+        <button id="sp-sync-cursor" title="Pull Cursor transcripts">↓ Cursor</button>
+        <button id="sp-sync-codex"  title="Pull Codex rollouts">↓ Codex</button>
+        <button id="sp-clear" title="Clear session selection" style="display:none;">✕ Clear</button>
+      </div>
+      <div id="sessions-list"></div>
+      <div id="sessions-empty">No past sessions yet. Run <b>reza sync-cursor</b> or <b>reza sync-codex</b>.</div>
+    </div>
+
     <div class="sidebar-header">
       <span>Session</span>
       <span id="session-time" style="font-weight:400;font-size:10px;"></span>

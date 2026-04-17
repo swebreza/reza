@@ -3,17 +3,27 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
 import click
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich import box
 
 from . import __version__
 from .schema import find_db_path, get_connection
+
+# Force UTF-8 on Windows consoles so markdown with arrows/bullets works in
+# plain cmd.exe / PowerShell as well as in editor terminals.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001 — older Pythons / non-TextIO
+        pass
 
 console = Console()
 err_console = Console(stderr=True)
@@ -452,17 +462,74 @@ def session_end(ctx, session_id, summary):
 @click.option("--status", default="all", show_default=True,
               type=click.Choice(["all", "active", "interrupted", "completed"]),
               help="Filter by status.")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+@click.option("--source", default="all", show_default=True,
+              type=click.Choice(["all", "cursor", "codex", "claude", "manual"]),
+              help="Filter by originating tool.")
+@click.option("--search", default=None, help="Substring match in working_on / summary / llm.")
+@click.option("--limit", default=50, show_default=True, help="Max sessions to return.")
+@click.option("--json", "as_json", is_flag=True, help="Output rich JSON (used by the VS Code extension).")
 @click.pass_context
-def session_list(ctx, status, as_json):
-    """List sessions."""
+def session_list(ctx, status, source, search, limit, as_json):
+    """List sessions with tool, turn count, tokens, files touched, and recency.
+
+    \b
+    Examples:
+        reza session list                    # all, newest first
+        reza session list --source cursor
+        reza session list --source codex --limit 10
+        reza session list --json             # structured for extension / tool calls
+    """
+    import sqlite3 as _sq
+
+    from .sessions_view import detail_to_dict, list_sessions as rich_list
+
     db = _require_db(ctx)
-    from .session import list_sessions
-    sessions = list_sessions(db, status if status != "all" else None)
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    try:
+        rows = rich_list(conn, source=source, limit=limit, search=search)
+    finally:
+        conn.close()
+
+    if status != "all":
+        rows = [r for r in rows if r.status == status]
+
     if as_json:
-        click.echo(json.dumps(sessions, indent=2))
-    else:
-        _print_sessions(sessions)
+        click.echo(json.dumps([detail_to_dict(r) for r in rows], indent=2, default=str))
+        return
+
+    if not rows:
+        console.print("[dim]No matching sessions.[/dim]")
+        return
+
+    table = Table(box=box.SIMPLE, expand=False, show_edge=False, pad_edge=False)
+    table.add_column("tool",   style="magenta", no_wrap=True, width=7)
+    table.add_column("id",     style="cyan",    no_wrap=True)
+    table.add_column("llm",    style="white",   no_wrap=True, max_width=12)
+    table.add_column("turns",  justify="right", style="green",  no_wrap=True)
+    table.add_column("tok",    justify="right", style="dim",    no_wrap=True)
+    table.add_column("files",  justify="right", style="blue",   no_wrap=True)
+    table.add_column("last",   style="dim",     no_wrap=True, max_width=10)
+    table.add_column("working on", overflow="ellipsis", no_wrap=True, max_width=60)
+
+    from .sessions_view import _relative_age
+    for r in rows:
+        summary = (r.working_on or r.first_user_message or "").replace("\n", " ").strip()
+        table.add_row(
+            (r.source_tool or "-"),
+            r.id,
+            r.llm_name or "",
+            f"{r.turn_count:,}",
+            f"{r.token_total:,}",
+            f"{len(r.files_touched):,}",
+            _relative_age(r.last_turn_at or r.started_at),
+            summary,
+        )
+    console.print(table)
+    console.print(
+        f"\n[dim]{len(rows)} session(s). Load one with "
+        f"[bold]reza session load <id> --copy[/bold] to paste into any LLM.[/dim]"
+    )
 
 
 # ─── session turns ───────────────────────────────────────────────────────────
@@ -626,6 +693,278 @@ def session_handoff(ctx, session_id, fmt, budget_tokens, search_query, as_json):
 
 
 # ─────────────────────────────────────────────
+# Cross-tool session inspection (show / load / graph)
+# ─────────────────────────────────────────────
+
+
+@session.command("show")
+@click.argument("session_id")
+@click.option("--turns", "turn_limit", default=20, show_default=True,
+              help="Max turns to render.")
+@click.option("--json", "as_json", is_flag=True, help="Emit structured JSON.")
+@click.pass_context
+def session_show(ctx, session_id, turn_limit, as_json):
+    """Rich detail for a single session — turns, files, tokens, source tool.
+
+    \b
+    Examples:
+        reza session show cursor-7c49f9bf
+        reza session show codex-019b975d --json
+    """
+    import sqlite3 as _sq
+
+    from .sessions_view import (
+        detail_to_dict,
+        get_session_detail,
+        get_session_turns,
+        render_session_markdown,
+    )
+
+    db = _require_db(ctx)
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    try:
+        detail = get_session_detail(conn, session_id)
+        if detail is None:
+            err_console.print(f"[red]No session with id:[/red] {session_id}")
+            ctx.exit(1)
+            return
+        turns = get_session_turns(conn, session_id, limit=max(turn_limit, detail.turn_count))
+    finally:
+        conn.close()
+
+    if as_json:
+        payload = detail_to_dict(detail)
+        payload["turns"] = [
+            {
+                "role": t["role"],
+                "content": t["content"],
+                "token_est": t["token_est"],
+                "turn_index": t["turn_index"],
+                "recorded_at": t["recorded_at"],
+            }
+            for t in turns[-turn_limit:]
+        ]
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+
+    click.echo(render_session_markdown(detail, turns, max_turns=turn_limit))
+
+
+@session.command("load")
+@click.argument("session_id")
+@click.option("--tokens", "max_tokens", default=4000, show_default=True,
+              help="Token budget for the pack.")
+@click.option("--copy", is_flag=True, help="Copy to clipboard for paste into next LLM.")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Write pack to this file instead of stdout.")
+@click.pass_context
+def session_load(ctx, session_id, max_tokens, copy, out_path):
+    """Build a handoff pack scoped to ONE specific session.
+
+    This is the core cross-LLM handoff: pick a past Cursor/Codex/Claude
+    session and produce a paste-ready markdown pack for the NEXT LLM.
+
+    \b
+    Examples:
+        reza session load cursor-7c49f9bf --copy
+        reza session load codex-019b975d --tokens 3000 --out handoff.md
+    """
+    import sqlite3 as _sq
+
+    from .context.pack import PackOptions, build_context_pack
+
+    db = _require_db(ctx)
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    try:
+        body = build_context_pack(
+            conn,
+            PackOptions(
+                session_id=session_id,
+                max_tokens=max_tokens,
+                include_overview=True,
+                include_recent_chat=True,
+                include_recent_changes=True,
+                chat_turns=20,
+            ),
+        )
+    finally:
+        conn.close()
+
+    if out_path:
+        Path(out_path).write_text(body, encoding="utf-8")
+        console.print(
+            f"[green]Pack written ->[/green] [bold]{out_path}[/bold]  "
+            f"[dim]({len(body):,} chars ~ {len(body)//4:,} tokens)[/dim]"
+        )
+
+    if copy:
+        try:
+            import pyperclip  # type: ignore
+            pyperclip.copy(body)
+            console.print(
+                f"[green]Copied session pack to clipboard.[/green]  "
+                f"[dim]Paste into any LLM to resume `{session_id}`.[/dim]"
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            err_console.print(
+                f"[yellow]Clipboard copy failed:[/yellow] {e}  - printing instead."
+            )
+
+    if not out_path:
+        click.echo(body)
+
+
+@session.command("graph")
+@click.argument("session_id")
+@click.option("--json", "as_json", is_flag=True, default=True,
+              help="Emit JSON (default for extension consumption).")
+@click.pass_context
+def session_graph(ctx, session_id, as_json):
+    """Export the subgraph of files + nodes this session touched.
+
+    Primarily consumed by the VS Code extension to highlight or filter the
+    graph when a session is selected.
+    """
+    import sqlite3 as _sq
+
+    from .sessions_view import detail_to_dict, get_session_detail, get_session_graph_scope
+
+    db = _require_db(ctx)
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    try:
+        detail = get_session_detail(conn, session_id)
+        if detail is None:
+            err_console.print(f"[red]No session with id:[/red] {session_id}")
+            ctx.exit(1)
+            return
+        scope = get_session_graph_scope(conn, session_id)
+    finally:
+        conn.close()
+
+    payload = {"session": detail_to_dict(detail), "scope": scope}
+    click.echo(json.dumps(payload, indent=None if as_json else 2, default=str))
+
+
+# ─────────────────────────────────────────────
+# Cross-tool sync (cursor, codex)
+# ─────────────────────────────────────────────
+
+
+@main.command("sync-cursor")
+@click.option("--dir", "project_dir", default=".", show_default=True,
+              help="Project root directory.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def sync_cursor_cmd(ctx, project_dir, as_json):
+    """Ingest Cursor agent-transcripts for the current project.
+
+    Reads from ~/.cursor/projects/<slug>/agent-transcripts/*.jsonl where
+    <slug> is derived from the workspace path. Idempotent: re-running only
+    appends new turns.
+    """
+    import sqlite3 as _sq
+    from .ingest import sync_cursor_project
+
+    db = _require_db(ctx)
+    proj = Path(project_dir).resolve()
+
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    try:
+        with console.status("[bold cyan]Scanning Cursor transcripts...[/bold cyan]"):
+            result = sync_cursor_project(conn, proj)
+    finally:
+        conn.close()
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    if result["transcripts_found"] == 0:
+        console.print(
+            "[yellow]No Cursor transcripts found for this project.[/yellow]\n"
+            f"[dim]Looked under ~/.cursor/projects/ for slug matching '{proj}'[/dim]"
+        )
+        return
+
+    console.print(Panel.fit(
+        f"[bold green]Cursor sync complete[/bold green]\n\n"
+        f"  Transcripts found: [bold]{result['transcripts_found']:,}[/bold]\n"
+        f"  Sessions imported: [bold green]{result['sessions_imported']:,}[/bold green]\n"
+        f"  Sessions updated:  [bold cyan]{result['sessions_updated']:,}[/bold cyan]\n"
+        f"  New turns:         [bold]{result['turns_inserted']:,}[/bold]",
+        title="reza sync-cursor",
+        border_style="green",
+    ))
+
+
+@main.command("sync-codex")
+@click.option("--dir", "project_dir", default=".", show_default=True,
+              help="Project root directory.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def sync_codex_cmd(ctx, project_dir, as_json):
+    """Ingest Codex rollouts whose cwd matches the current project.
+
+    Reads from ~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl and keeps
+    only rollouts recorded with a matching working directory.
+    """
+    import sqlite3 as _sq
+    from .ingest import sync_codex_project
+
+    db = _require_db(ctx)
+    proj = Path(project_dir).resolve()
+
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    try:
+        with console.status("[bold cyan]Scanning Codex rollouts...[/bold cyan]"):
+            result = sync_codex_project(conn, proj)
+    finally:
+        conn.close()
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    if result["rollouts_found"] == 0:
+        console.print(
+            "[yellow]No Codex rollouts found for this project.[/yellow]\n"
+            f"[dim]Scanned ~/.codex/sessions/ for cwd == '{proj}'[/dim]"
+        )
+        return
+
+    console.print(Panel.fit(
+        f"[bold green]Codex sync complete[/bold green]\n\n"
+        f"  Rollouts matched:  [bold]{result['rollouts_found']:,}[/bold]\n"
+        f"  Sessions imported: [bold green]{result['sessions_imported']:,}[/bold green]\n"
+        f"  Sessions updated:  [bold cyan]{result['sessions_updated']:,}[/bold cyan]\n"
+        f"  New turns:         [bold]{result['turns_inserted']:,}[/bold]",
+        title="reza sync-codex",
+        border_style="green",
+    ))
+
+
+@main.command("sync-all")
+@click.option("--dir", "project_dir", default=".", show_default=True,
+              help="Project root directory.")
+@click.pass_context
+def sync_all_cmd(ctx, project_dir):
+    """Run every cross-tool sync (Cursor + Codex + Claude) in one go."""
+    ctx.invoke(sync_cursor_cmd, project_dir=project_dir, as_json=False)
+    ctx.invoke(sync_codex_cmd,  project_dir=project_dir, as_json=False)
+    # sync-claude is per-file; surface the command but don't auto-invoke.
+    console.print(
+        "\n[dim]For Claude Code: run [bold]reza sync-claude <path/to/.jsonl>[/bold] "
+        "or use the Stop hook installed via [bold]reza install-claude-hook[/bold].[/dim]"
+    )
+
+
+# ─────────────────────────────────────────────
 # graph group
 # ─────────────────────────────────────────────
 
@@ -649,18 +988,34 @@ def graph():
 @graph.command("build")
 @click.option("--dir", "project_dir", default=".", show_default=True,
               help="Project root directory.")
+@click.option(
+    "--semantic",
+    is_flag=True,
+    help="Slow Tree-sitter pass (full AST + CALL edges). Default: fast regex/line index.",
+)
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    help="Stream every file name as it is parsed (so you can see progress).",
+)
 @click.pass_context
-def graph_build(ctx, project_dir):
+def graph_build(ctx, project_dir, semantic, verbose):
     """Build the code knowledge graph from scratch.
 
-    Parses all supported source files using Tree-sitter and stores
-    structural nodes (functions, classes, imports) and edges (calls,
-    inheritance, contains) in the context database.
+    By default uses a **fast** line/regex index (Python uses built-in ``ast``).
+    Use ``--semantic`` for the slower Tree-sitter parse (adds CALL edges).
+
+    \b
+    Observability (env):
+      REZA_GRAPH_WORKERS=N       Parallel parser threads (default: auto)
+      REZA_GRAPH_MAX_SECONDS=N   Overall build budget; partial graph is kept
+      REZA_GRAPH_FILE_TIMEOUT_S  (reserved for future use)
     """
     db = _require_db(ctx)
 
     try:
-        from .graph.builder import build_graph
+        from .graph.builder import build_graph, list_graph_source_files
     except ImportError:
         err_console.print(
             "[red]Graph dependencies not installed.[/red]\n"
@@ -670,19 +1025,189 @@ def graph_build(ctx, project_dir):
         return
 
     project_dir = str(Path(project_dir).resolve())
-    with console.status("[bold green]Building code graph…[/bold green]"):
-        result = build_graph(project_dir, db, incremental=False)
+    index_mode = "semantic" if semantic else "fast"
+    label = (
+        "Tree-sitter (full AST + calls)"
+        if semantic
+        else "Fast index (ast / regex)"
+    )
 
+    console.print(
+        f"[dim]reza[/dim] [bold]v{__version__}[/bold]  "
+        f"[dim]Project:[/dim] [bold]{project_dir}[/bold]  "
+        f"[dim]Mode:[/dim] [bold]{index_mode}[/bold]"
+    )
+
+    # Discovery can itself be slow on huge untracked trees — show progress.
+    with console.status("[bold cyan]Discovering files…[/bold cyan]"):
+        t0 = time.monotonic()
+        files = list_graph_source_files(project_dir)
+        discover_s = time.monotonic() - t0
+    nfiles = len(files)
+    console.print(
+        f"[dim]Discovered[/dim] [bold]{nfiles:,}[/bold] files "
+        f"in [bold]{discover_s:.2f}s[/bold]"
+    )
+
+    if nfiles == 0:
+        err_console.print(
+            "[yellow]No source files found.[/yellow]  "
+            "Check that you're in the right directory and that IGNORE_DIRS "
+            "isn't hiding everything."
+        )
+        return
+
+    if verbose:
+        import sys
+        t_last = [time.monotonic()]
+
+        def cb(cur: int, total: int, rel: str) -> None:
+            now = time.monotonic()
+            if now - t_last[0] > 0.05 or cur == total:
+                t_last[0] = now
+                sys.stderr.write(f"  [{cur}/{total}] {rel}\n")
+                sys.stderr.flush()
+
+        result = build_graph(
+            project_dir,
+            db,
+            incremental=False,
+            index_mode=index_mode,
+            progress_callback=cb,
+            files=files,
+        )
+    else:
+        with Progress(
+            TextColumn("[bold]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                f"{label} — 0/{nfiles} files", total=max(nfiles, 1)
+            )
+
+            def cb(cur: int, total: int, rel: str) -> None:
+                progress.update(
+                    task,
+                    completed=cur,
+                    total=total,
+                    description=f"{label} — {cur}/{total} [dim]{rel[:42]}[/dim]",
+                )
+
+            result = build_graph(
+                project_dir,
+                db,
+                incremental=False,
+                index_mode=index_mode,
+                progress_callback=cb,
+                files=files,
+            )
+
+    sg = result.get("skipped_giant", 0)
+    timed_out = result.get("timed_out", 0)
+    budget_hit = result.get("budget_hit", False)
+    mode_label = result.get("index_mode", index_mode)
+    workers = result.get("workers", 1)
+    budget_line = ""
+    if budget_hit:
+        budget_line = (
+            f"  [bold yellow]Budget hit[/bold yellow]            : yes  "
+            f"[dim](partial graph saved — raise REZA_GRAPH_MAX_SECONDS)[/dim]\n"
+        )
     console.print(Panel(
-        f"  [bold]Files parsed[/bold]  : {result['parsed']:,}\n"
-        f"  [bold]Files skipped[/bold] : {result['skipped']:,}\n"
-        f"  [bold]Errors[/bold]        : {result['errors']}\n"
-        f"  [bold]Total nodes[/bold]   : {result['total_nodes']:,}\n"
-        f"  [bold]Total edges[/bold]   : {result['total_edges']:,}\n"
-        f"  [bold]Time[/bold]          : {result['elapsed_s']}s",
+        f"  [bold]Index mode[/bold]            : {mode_label}\n"
+        f"  [bold]Parallel workers[/bold]      : {workers}  "
+        f"[dim](set REZA_GRAPH_WORKERS=0 for sequential)[/dim]\n"
+        f"  [bold]Files parsed[/bold]          : {result['parsed']:,}\n"
+        f"  [bold]Skipped (unchanged)[/bold]   : {result['skipped']:,}\n"
+        f"  [bold]Skipped (large/min)[/bold]  : {sg:,}\n"
+        f"  [bold]Timed out[/bold]              : {timed_out:,}\n"
+        + budget_line +
+        f"  [bold]Errors[/bold]                 : {result['errors']}\n"
+        f"  [bold]Total nodes[/bold]            : {result['total_nodes']:,}\n"
+        f"  [bold]Total edges[/bold]            : {result['total_edges']:,}\n"
+        f"  [bold]Time[/bold]                   : {result['elapsed_s']}s",
         title="[bold]reza graph build[/bold]",
         border_style="green",
     ))
+
+
+@graph.command("bench")
+@click.option("--dir", "project_dir", default=".", show_default=True,
+              help="Project root directory.")
+@click.option("--sample", default=200, show_default=True,
+              help="Max files to parse for timing sample.")
+@click.option("--semantic", is_flag=True, help="Bench Tree-sitter mode.")
+def graph_bench(project_dir, sample, semantic):
+    """Benchmark per-file parse time on a sample; show slowest files.
+
+    No DB writes. Use this when `reza graph build` feels slow — it tells you
+    exactly **which files are eating time**.
+    """
+    import time as _t
+
+    try:
+        from .graph.builder import list_graph_source_files, should_skip_graph_file
+        from .graph.fast_index import fast_parse_file
+        from .graph.parser import parse_file
+    except ImportError as e:
+        err_console.print(f"[red]Graph deps missing:[/red] {e}")
+        raise click.Abort()
+
+    project_dir = str(Path(project_dir).resolve())
+    files = list_graph_source_files(project_dir)[:sample]
+    parse_fn = parse_file if semantic else (
+        lambda p: fast_parse_file(p, str(Path(p).relative_to(project_dir)).replace("\\", "/"))
+    )
+
+    total_t = 0.0
+    timings: list[tuple[float, str, int]] = []
+    skipped = 0
+    errored = 0
+
+    console.print(
+        f"[bold]Benchmarking {len(files)} files in {'semantic' if semantic else 'fast'} mode...[/bold]"
+    )
+
+    for p in files:
+        if should_skip_graph_file(Path(p)):
+            skipped += 1
+            continue
+        t0 = _t.monotonic()
+        try:
+            nodes, _edges, _h = parse_fn(p)
+            size = Path(p).stat().st_size
+        except Exception:
+            errored += 1
+            continue
+        dt = _t.monotonic() - t0
+        total_t += dt
+        rel = str(Path(p).relative_to(project_dir)).replace("\\", "/")
+        timings.append((dt, rel, size))
+
+    timings.sort(reverse=True)
+    parsed = len(timings)
+    avg_ms = (total_t / parsed * 1000) if parsed else 0.0
+
+    console.print(Panel(
+        f"  [bold]Files parsed[/bold]     : {parsed:,}\n"
+        f"  [bold]Skipped (large)[/bold]  : {skipped:,}\n"
+        f"  [bold]Errors[/bold]           : {errored:,}\n"
+        f"  [bold]Total time[/bold]       : {total_t:.2f}s\n"
+        f"  [bold]Avg / file[/bold]       : {avg_ms:.1f} ms",
+        title="[bold]reza graph bench[/bold]",
+        border_style="cyan",
+    ))
+
+    if timings:
+        console.print("\n[bold]Top 10 slowest files:[/bold]")
+        for dt, rel, sz in timings[:10]:
+            console.print(
+                f"  [yellow]{dt * 1000:7.1f} ms[/yellow]  "
+                f"[dim]{sz / 1024:6.1f} KiB[/dim]  {rel}"
+            )
 
 
 @graph.command("update")
@@ -742,10 +1267,12 @@ def graph_status(ctx, as_json):
 
     store = GraphStore(db)
     stats = store.get_stats()
+    index_mode = store.get_metadata("graph_index_mode") or "unknown"
     store.close()
 
     if as_json:
         click.echo(json.dumps({
+            "index_mode": index_mode,
             "total_nodes": stats.total_nodes,
             "total_edges": stats.total_edges,
             "nodes_by_kind": stats.nodes_by_kind,
@@ -764,11 +1291,13 @@ def graph_status(ctx, as_json):
         return
 
     console.print(Panel(
-        f"  [bold]Files[/bold]     : {stats.files_count:,}\n"
-        f"  [bold]Nodes[/bold]     : {stats.total_nodes:,}\n"
-        f"  [bold]Edges[/bold]     : {stats.total_edges:,}\n"
-        f"  [bold]Languages[/bold] : {', '.join(stats.languages) or 'none'}\n"
-        f"  [bold]Updated[/bold]   : {stats.last_updated or 'never'}",
+        f"  [bold]Index mode[/bold] : {index_mode}  "
+        f"(fast=regex/heuristic, semantic=Tree-sitter)\n"
+        f"  [bold]Files[/bold]      : {stats.files_count:,}\n"
+        f"  [bold]Nodes[/bold]      : {stats.total_nodes:,}\n"
+        f"  [bold]Edges[/bold]      : {stats.total_edges:,}\n"
+        f"  [bold]Languages[/bold]  : {', '.join(stats.languages) or 'none'}\n"
+        f"  [bold]Updated[/bold]    : {stats.last_updated or 'never'}",
         title="[bold]reza graph status[/bold]",
         border_style="blue",
     ))
@@ -913,6 +1442,248 @@ def graph_search(ctx, query, limit, as_json):
     for n in results:
         table.add_row(n.kind, n.name, n.file_path, str(n.line_start))
     console.print(table)
+
+
+# ─────────────────────────────────────────────
+# LLM-facing context commands
+# ─────────────────────────────────────────────
+
+
+def _open_context_conn(ctx) -> "object":
+    """Open a sqlite3 connection with Row factory for the active reza DB."""
+    import sqlite3 as _sq
+    db = _require_db(ctx)
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    return conn
+
+
+@graph.command("overview")
+@click.option("--dir", "subdir", default=None,
+              help="Restrict to a subdirectory (e.g. 'src/auth').")
+@click.option("--tokens", "max_tokens", default=3000, show_default=True,
+              help="Max tokens in rendered output (approx).")
+@click.option("--symbols-per-file", default=8, show_default=True,
+              help="Top-N symbols per file.")
+@click.option("--json", "as_json", is_flag=True, help="Emit structured JSON.")
+@click.pass_context
+def graph_overview(ctx, subdir, max_tokens, symbols_per_file, as_json):
+    """Compact whole-project map — the LLM's first call.
+
+    \b
+    Markdown (default) = human + LLM readable tree:
+      reza graph overview --tokens 2000
+    JSON for tool calls:
+      reza graph overview --json --tokens 4000 > overview.json
+    """
+    from .context.overview import (
+        build_overview,
+        overview_to_dict,
+        render_overview_markdown,
+    )
+
+    conn = _open_context_conn(ctx)
+    try:
+        ov = build_overview(
+            conn,
+            path_prefix=subdir,
+            max_symbols_per_file=symbols_per_file,
+        )
+    finally:
+        conn.close()
+
+    if as_json:
+        md = render_overview_markdown(ov, max_tokens=max_tokens)
+        d = overview_to_dict(ov)
+        d["_markdown_budget_ok"] = not ov.truncated
+        click.echo(json.dumps(d, indent=2))
+        return
+
+    click.echo(render_overview_markdown(ov, max_tokens=max_tokens))
+
+
+@graph.command("neighbors")
+@click.argument("node_query")
+@click.option("--hops", default=1, show_default=True, type=click.IntRange(1, 2),
+              help="1 = direct neighbors, 2 = include 2-hop nodes.")
+@click.option("--json", "as_json", is_flag=True, help="Emit structured JSON.")
+@click.option("--max-edges", default=50, show_default=True,
+              help="Cap on edges per side.")
+@click.pass_context
+def graph_neighbors(ctx, node_query, hops, as_json, max_edges):
+    """Zoom into ONE node — its incoming/outgoing edges + siblings.
+
+    NODE_QUERY can be:
+      • an exact qualified_name  (e.g. 'reza/cli.py::main')
+      • a file path               (e.g. 'reza/cli.py')
+      • a bare name               (e.g. 'build_graph')
+    """
+    from .context.neighbors import (
+        get_neighbors,
+        neighborhood_to_dict,
+        render_neighborhood_markdown,
+    )
+
+    conn = _open_context_conn(ctx)
+    try:
+        nh = get_neighbors(
+            conn, node_query, hops=hops, max_edges_per_side=max_edges
+        )
+    finally:
+        conn.close()
+
+    if as_json:
+        click.echo(json.dumps(neighborhood_to_dict(nh), indent=2))
+        return
+
+    click.echo(render_neighborhood_markdown(nh))
+
+
+@graph.command("subtree")
+@click.argument("path_or_qn")
+@click.option("--max-nodes", default=500, show_default=True,
+              help="Cap on nodes returned.")
+@click.option("--json", "as_json", is_flag=True, help="Emit structured JSON.")
+@click.pass_context
+def graph_subtree(ctx, path_or_qn, max_nodes, as_json):
+    """List everything CONTAINED under a file or class (hierarchical).
+
+    \b
+    Examples:
+      reza graph subtree reza/cli.py
+      reza graph subtree 'reza/graph/store.py::GraphStore'
+    """
+    from .context.subtree import get_subtree, render_subtree_markdown, subtree_to_dict
+
+    conn = _open_context_conn(ctx)
+    try:
+        st = get_subtree(conn, path_or_qn, max_nodes=max_nodes)
+    finally:
+        conn.close()
+
+    if as_json:
+        click.echo(json.dumps(subtree_to_dict(st), indent=2))
+        return
+
+    click.echo(render_subtree_markdown(st))
+
+
+@main.command("find")
+@click.argument("query", nargs=-1, required=True)
+@click.option(
+    "--source",
+    type=click.Choice(["graph", "chat", "file", "all"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="Which sources to search.",
+)
+@click.option("--limit", default=20, show_default=True,
+              help="Max results returned.")
+@click.option("--json", "as_json", is_flag=True, help="Emit structured JSON.")
+@click.pass_context
+def find_cmd(ctx, query, source, limit, as_json):
+    """Hybrid ranked search across graph + chat + files.
+
+    \b
+    Scoring = BM25 relevance × recency decay. Each hit is labelled with its
+    source so you can tell whether it's a code node, a past conversation, or
+    a file name match.
+
+    \b
+    Examples:
+      reza find "build graph"
+      reza find user auth --source graph --limit 10
+      reza find "token budget" --json
+    """
+    from .context.find import hits_to_dict, render_hits_markdown, unified_find
+
+    q = " ".join(query).strip()
+    if not q:
+        err_console.print("[red]Empty query.[/red]")
+        ctx.exit(2)
+        return
+
+    source_l = source.lower()
+    if source_l == "all":
+        sources = ("graph", "chat", "file")
+    else:
+        sources = (source_l,)  # type: ignore[assignment]
+
+    conn = _open_context_conn(ctx)
+    try:
+        hits = unified_find(conn, q, sources=sources, limit=limit)  # type: ignore[arg-type]
+    finally:
+        conn.close()
+
+    if as_json:
+        click.echo(json.dumps({"query": q, "hits": hits_to_dict(hits)}, indent=2))
+        return
+
+    click.echo(render_hits_markdown(hits, query=q))
+
+
+@main.command("context-pack")
+@click.option("--query", "-q", default="",
+              help="Focus the pack around this query (optional).")
+@click.option("--tokens", "max_tokens", default=4000, show_default=True,
+              help="Token budget for the full pack.")
+@click.option("--session", "session_id", default=None,
+              help="Pin to a specific session id (default: most recent).")
+@click.option("--no-overview", is_flag=True, help="Skip project overview section.")
+@click.option("--no-chat", is_flag=True, help="Skip recent chat turns section.")
+@click.option("--no-changes", is_flag=True, help="Skip recent changes section.")
+@click.option("--chat-turns", default=12, show_default=True,
+              help="Number of recent turns to include.")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Write pack to this file instead of stdout.")
+@click.option("--copy", is_flag=True,
+              help="Copy to clipboard (pyperclip; falls back to stdout).")
+@click.pass_context
+def context_pack_cmd(
+    ctx, query, max_tokens, session_id, no_overview, no_chat, no_changes,
+    chat_turns, out_path, copy
+):
+    """Produce a paste-ready markdown pack for the next LLM.
+
+    The next LLM reads the pack and can then tool-call ``reza graph
+    neighbors``, ``reza graph subtree``, or ``reza find`` for deeper detail.
+    """
+    from .context.pack import PackOptions, build_context_pack
+
+    opts = PackOptions(
+        query=query,
+        max_tokens=max_tokens,
+        session_id=session_id,
+        include_overview=not no_overview,
+        include_recent_chat=not no_chat,
+        include_recent_changes=not no_changes,
+        chat_turns=chat_turns,
+    )
+    conn = _open_context_conn(ctx)
+    try:
+        body = build_context_pack(conn, opts)
+    finally:
+        conn.close()
+
+    if out_path:
+        Path(out_path).write_text(body, encoding="utf-8")
+        console.print(f"[green]Wrote pack →[/green] [bold]{out_path}[/bold]  "
+                      f"[dim]({len(body):,} chars ≈ {len(body)//4:,} tokens)[/dim]")
+
+    if copy:
+        try:
+            import pyperclip  # type: ignore
+            pyperclip.copy(body)
+            console.print(f"[green]Copied to clipboard[/green]  "
+                          f"[dim]({len(body):,} chars ≈ {len(body)//4:,} tokens)[/dim]")
+            return
+        except Exception as e:  # noqa: BLE001
+            err_console.print(
+                f"[yellow]Clipboard copy failed:[/yellow] {e}  — printing instead."
+            )
+
+    if not out_path:
+        click.echo(body)
 
 
 @graph.command("export")

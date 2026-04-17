@@ -1,4 +1,9 @@
-"""Transcript file ingestion — parses .md and .json files into conversation turns."""
+"""Transcript file ingestion — parses .md and .json files into conversation turns.
+
+Moved here from ``reza/ingest.py`` when this module became a package hosting
+multiple tool-specific ingesters (cursor, codex, …).  Public API is preserved
+and re-exported from :mod:`reza.ingest`.
+"""
 
 import json
 import re
@@ -6,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .schema import get_connection
-from .session import start_session
-from .turns import add_turns_bulk
+from ..schema import get_connection
+from ..session import start_session
+from ..turns import add_turns_bulk
 
 
 def parse_json_transcript(file_path: str) -> List[Dict]:

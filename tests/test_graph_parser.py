@@ -82,7 +82,7 @@ class TestParsePython:
         return str(f)
 
     def test_parses_nodes(self, py_file):
-        nodes, edges = parse_file(py_file)
+        nodes, edges, _ = parse_file(py_file)
         names = {n.name for n in nodes}
         assert "AuthService" in names
         assert "login" in names
@@ -90,36 +90,36 @@ class TestParsePython:
         assert "validate" in names
 
     def test_parses_file_node(self, py_file):
-        nodes, _ = parse_file(py_file)
+        nodes, _, _ = parse_file(py_file)
         file_nodes = [n for n in nodes if n.kind == "File"]
         assert len(file_nodes) == 1
         assert file_nodes[0].language == "python"
 
     def test_parses_class(self, py_file):
-        nodes, _ = parse_file(py_file)
+        nodes, _, _ = parse_file(py_file)
         classes = [n for n in nodes if n.kind == "Class"]
         assert len(classes) == 1
         assert classes[0].name == "AuthService"
 
     def test_parses_functions(self, py_file):
-        nodes, _ = parse_file(py_file)
+        nodes, _, _ = parse_file(py_file)
         funcs = [n for n in nodes if n.kind == "Function"]
         assert len(funcs) >= 3  # login, logout, validate
 
     def test_contains_edges(self, py_file):
-        _, edges = parse_file(py_file)
+        _, edges, _ = parse_file(py_file)
         contains = [e for e in edges if e.kind == "CONTAINS"]
         assert len(contains) >= 3  # file->class, class->login, class->logout
 
     def test_import_edges(self, py_file):
-        _, edges = parse_file(py_file)
+        _, edges, _ = parse_file(py_file)
         imports = [e for e in edges if e.kind == "IMPORTS_FROM"]
         assert len(imports) >= 1
         targets = {e.target for e in imports}
         assert "os" in targets or "pathlib" in targets or "Path" in targets
 
     def test_call_edges(self, py_file):
-        _, edges = parse_file(py_file)
+        _, edges, _ = parse_file(py_file)
         calls = [e for e in edges if e.kind == "CALLS"]
         assert len(calls) >= 1
         call_targets = {e.target for e in calls}
@@ -140,13 +140,13 @@ class TestParseTestFile:
         return str(f)
 
     def test_detects_test_functions(self, test_file):
-        nodes, _ = parse_file(test_file)
+        nodes, _, _ = parse_file(test_file)
         tests = [n for n in nodes if n.is_test]
         assert len(tests) >= 2
         assert all(n.kind == "Test" for n in tests)
 
     def test_tested_by_edges(self, test_file):
-        _, edges = parse_file(test_file)
+        _, edges, _ = parse_file(test_file)
         tested_by = [e for e in edges if e.kind == "TESTED_BY"]
         assert len(tested_by) >= 2
 
@@ -155,12 +155,12 @@ class TestParseUnsupported:
     def test_unsupported_extension(self, tmp_path):
         f = tmp_path / "data.csv"
         f.write_text("a,b,c\n1,2,3\n")
-        nodes, edges = parse_file(str(f))
+        nodes, edges, _ = parse_file(str(f))
         assert nodes == []
         assert edges == []
 
     def test_missing_file(self):
-        nodes, edges = parse_file("/nonexistent/file.py")
+        nodes, edges, _ = parse_file("/nonexistent/file.py")
         assert nodes == []
         assert edges == []
 
@@ -180,7 +180,7 @@ class TestParseInheritance:
         return str(f)
 
     def test_inherits_edges(self, inheritance_file):
-        _, edges = parse_file(inheritance_file)
+        _, edges, _ = parse_file(inheritance_file)
         inherits = [e for e in edges if e.kind == "INHERITS"]
         assert len(inherits) >= 1
         assert any("BaseModel" in e.target for e in inherits)

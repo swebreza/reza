@@ -86,26 +86,64 @@ function edgeMarker(e) {
 }
 
 /* ---------- Overlay / loading ---------- */
-const overlayEl = document.getElementById('overlay');
-const overlayMsg = document.getElementById('overlay-msg');
-const overlayErr = document.getElementById('overlay-err');
+const overlayEl     = document.getElementById('overlay');
+const overlayMsg    = document.getElementById('overlay-msg');
+const overlayErr    = document.getElementById('overlay-err');
+const overlaySpin   = document.getElementById('overlay-spinner');
+const ctaEl         = document.getElementById('cta');
+const ctaTitle      = document.getElementById('cta-title');
+const ctaDesc       = document.getElementById('cta-desc');
+const ctaPath       = document.getElementById('cta-path');
+const ctaButtons    = document.getElementById('cta-buttons');
+const ctaHint       = document.getElementById('cta-hint');
 
 function showLoading(msg) {
   overlayEl.classList.remove('hidden');
   overlayMsg.textContent = msg || 'Loading…';
   overlayErr.textContent = '';
+  overlaySpin.style.display = '';
+  ctaEl.classList.remove('visible');
 }
 
 function showError(err) {
   overlayEl.classList.remove('hidden');
   overlayMsg.textContent = '';
   overlayErr.textContent = err;
-  document.querySelector('.spinner').style.display = 'none';
+  overlaySpin.style.display = 'none';
+  ctaEl.classList.remove('visible');
 }
 
 function hideOverlay() {
   overlayEl.classList.add('hidden');
-  document.querySelector('.spinner').style.display = '';
+  overlaySpin.style.display = '';
+  ctaEl.classList.remove('visible');
+}
+
+/** Render a CTA inside the overlay (needs-init / needs-build).
+ *  buttons: Array<{label, action, secondary?:boolean}> */
+function showCTA({ title, desc, path: workspacePath, buttons, hint }) {
+  overlayEl.classList.remove('hidden');
+  overlayMsg.textContent = '';
+  overlayErr.textContent = '';
+  overlaySpin.style.display = 'none';
+
+  ctaTitle.textContent = title;
+  ctaDesc.textContent  = desc;
+  ctaPath.textContent  = workspacePath || '';
+  ctaPath.style.display = workspacePath ? 'block' : 'none';
+  ctaHint.textContent   = hint || '';
+  ctaHint.style.display = hint ? 'block' : 'none';
+
+  ctaButtons.innerHTML = '';
+  for (const b of buttons) {
+    const btn = document.createElement('button');
+    btn.textContent = b.label;
+    if (b.secondary) btn.classList.add('secondary');
+    btn.addEventListener('click', () => postMsg({ type: b.action }));
+    ctaButtons.appendChild(btn);
+  }
+
+  ctaEl.classList.add('visible');
 }
 
 /* ---------- Build / render graph ---------- */
@@ -118,7 +156,41 @@ function buildGraph(payload) {
   nodeStatesMap = {};
   for (const n of nodes) nodeStatesMap[n.id] = n.state ?? 'cold';
 
-  renderSidebar(activeSession, payload.stats);
+  // Render sidebar + workspace info first so empty-state still shows context
+  renderSidebar(activeSession, payload.stats, payload);
+
+  // Empty-state CTAs based on payload flags
+  if (payload.needsInit) {
+    showCTA({
+      title: 'Reza is not initialized in this project',
+      desc: 'Set up Reza here to build a code knowledge graph and auto-track your LLM sessions. One click does everything.',
+      path: payload.workspaceRoot || '',
+      buttons: [
+        { label: 'Initialize & Build Graph', action: 'initAndBuild' },
+        { label: 'Start Auto-Tracking', action: 'startTracking', secondary: true },
+      ],
+      hint: 'This runs `reza init` + `reza graph build` in a terminal. Auto-refreshes the moment the graph is ready.',
+    });
+    return;
+  }
+
+  if (payload.needsBuild) {
+    showCTA({
+      title: 'Graph is empty for this project',
+      desc: 'The database is initialized, but the code graph has not been built yet. Build it now to see all files, classes and functions as a live graph.',
+      path: payload.dbPath || payload.workspaceRoot || '',
+      buttons: [
+        { label: 'Build Graph Now', action: 'buildGraph' },
+        { label: 'Start Auto-Tracking', action: 'startTracking', secondary: true },
+      ],
+      hint: payload.errorMessage
+        ? 'Last attempt: ' + payload.errorMessage
+        : 'This runs `reza graph build` in a terminal. The panel refreshes automatically when done.',
+    });
+    return;
+  }
+
+  hideOverlay();
   renderD3();
 }
 
@@ -233,6 +305,9 @@ function renderD3() {
     .force('charge', d3.forceManyBody().strength(-180).distanceMax(350))
     .force('center', d3.forceCenter(W / 2, H / 2))
     .force('collide', d3.forceCollide(d => nodeRadius(d) + 4))
+    .on('end', () => {
+      if (typeof window.__rezaFitToView === 'function') window.__rezaFitToView(600);
+    })
     .on('tick', () => {
       edgeSel
         .attr('x1', d => d.source.x)
@@ -393,8 +468,98 @@ document.getElementById('btn-refresh').addEventListener('click', () => {
   postMsg({ type: 'refresh' });
 });
 
+/* ---------- Sidebar collapse toggle (persisted in sessionStorage) ---------- */
+const sidebarEl = document.getElementById('sidebar');
+const sidebarToggleBtn = document.getElementById('sidebar-toggle');
+
+function applySidebarState(collapsed) {
+  if (collapsed) {
+    sidebarEl.classList.add('collapsed');
+    sidebarToggleBtn.setAttribute('aria-expanded', 'false');
+  } else {
+    sidebarEl.classList.remove('collapsed');
+    sidebarToggleBtn.setAttribute('aria-expanded', 'true');
+  }
+  // Let CSS transition complete before re-centering simulation.
+  setTimeout(handleResize, 220);
+}
+
+try {
+  const saved = sessionStorage.getItem('reza.sidebarCollapsed');
+  if (saved === '1') applySidebarState(true);
+  else applySidebarState(false);
+} catch (_) {
+  applySidebarState(false);
+}
+
+sidebarToggleBtn.addEventListener('click', () => {
+  const next = !sidebarEl.classList.contains('collapsed');
+  applySidebarState(next);
+  try { sessionStorage.setItem('reza.sidebarCollapsed', next ? '1' : '0'); } catch (_) {}
+});
+
+/* ---------- Window resize: recenter force + refit zoom ---------- */
+let resizeRaf = 0;
+function handleResize() {
+  if (resizeRaf) cancelAnimationFrame(resizeRaf);
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = 0;
+    const wrap = document.getElementById('graph-wrap');
+    if (!wrap) return;
+    const W = wrap.clientWidth;
+    const H = wrap.clientHeight;
+    if (!simulation || W === 0 || H === 0) return;
+    simulation.force('center', d3.forceCenter(W / 2, H / 2));
+    simulation.alpha(0.25).restart();
+  });
+}
+
+window.addEventListener('resize', handleResize);
+
+/* Also react when the panel itself is resized inside VS Code even if the
+   window size doesn't change (e.g. sidebar toggle). */
+if (typeof ResizeObserver === 'function') {
+  const ro = new ResizeObserver(handleResize);
+  ro.observe(document.getElementById('graph-wrap'));
+}
+
+/* ---------- Fit-to-view helper ---------- */
+function fitToView(durationMs = 400) {
+  if (!svgSel || !zoomBeh) return;
+  const wrap = document.getElementById('graph-wrap');
+  if (!wrap) return;
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+  if (W === 0 || H === 0) return;
+
+  const visible = nodes.filter(n => activeKindFilters.has(n.kind) && typeof n.x === 'number');
+  if (!visible.length) return;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of visible) {
+    const r = nodeRadius(n) + 8;
+    if (n.x - r < minX) minX = n.x - r;
+    if (n.y - r < minY) minY = n.y - r;
+    if (n.x + r > maxX) maxX = n.x + r;
+    if (n.y + r > maxY) maxY = n.y + r;
+  }
+  const gw = Math.max(1, maxX - minX);
+  const gh = Math.max(1, maxY - minY);
+  const scale = Math.min(W / gw, H / gh) * 0.9;
+  const k = Math.max(0.05, Math.min(4, scale));
+  const tx = (W - k * (minX + maxX)) / 2;
+  const ty = (H - k * (minY + maxY)) / 2;
+  svgSel.transition().duration(durationMs).call(
+    zoomBeh.transform,
+    d3.zoomIdentity.translate(tx, ty).scale(k)
+  );
+}
+
+/* Expose for debugging / keyboard shortcut */
+window.__rezaFitToView = fitToView;
+
 /* ---------- Sidebar renderer ---------- */
-function renderSidebar(session, stats) {
+function renderSidebar(session, stats, payload) {
   const content = document.getElementById('session-content');
   const timeEl  = document.getElementById('session-time');
 
@@ -404,8 +569,16 @@ function renderSidebar(session, stats) {
       : '';
   }
 
+  const projectBlock = payload
+    ? `<div class="sidebar-section" style="padding:10px 14px;">
+         <div class="stat-label" style="margin-bottom:4px;">Project</div>
+         <div style="font-size:11px;color:var(--text);word-break:break-all;">${escHtml(shortenPath(payload.workspaceRoot ?? ''))}</div>
+         ${payload.dbPath ? `<div style="font-size:10px;color:var(--text-dim);margin-top:3px;word-break:break-all;">${escHtml(shortenPath(payload.dbPath))}</div>` : '<div style="font-size:10px;color:var(--col-hot);margin-top:3px;">no context.db</div>'}
+       </div>`
+    : '';
+
   if (!session) {
-    content.innerHTML = '<div id="no-session">No active session detected.</div>';
+    content.innerHTML = projectBlock + '<div id="no-session">No active session detected.</div>';
     if (stats) {
       content.innerHTML += `
         <div class="sidebar-section">
@@ -427,7 +600,7 @@ function renderSidebar(session, stats) {
     return `<div class="hbar" style="background:${col};width:${pct}%;"></div>`;
   }
 
-  content.innerHTML = `
+  content.innerHTML = projectBlock + `
     <div class="sidebar-section">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
         <span class="session-badge" style="background:${toolHex}22;color:${toolHex};">
@@ -490,6 +663,15 @@ function fileItem(path, dotColor) {
   </div>`;
 }
 
+function shortenPath(p) {
+  if (!p) return '';
+  // Keep last 3 segments for readability
+  const sep = p.includes('\\') ? '\\' : '/';
+  const parts = p.split(sep).filter(Boolean);
+  if (parts.length <= 3) return p;
+  return '…' + sep + parts.slice(-3).join(sep);
+}
+
 function relativeTime(iso) {
   if (!iso) return '';
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -537,8 +719,217 @@ function applySessionUpdate(payload) {
     }
   });
 
-  renderSidebar(activeSession, null);
+  renderSidebar(activeSession, null, null);
 }
+
+/* ========================================================================
+   Cross-tool sessions browser
+   ------------------------------------------------------------------------
+   Renders the list of imported Cursor/Codex/Claude sessions in the sidebar
+   and wires click-to-scope onto the graph.  When a session is selected the
+   webview either *highlights* the files/nodes it touched (default) or
+   *filters* the graph down to just its subgraph.
+   ======================================================================== */
+
+const sessState = {
+  sessions: [],
+  selectedId: null,
+  selectedScope: null,   // { files, node_ids }
+  mode: (sessionStorage.getItem('reza:sessionMode') || 'highlight'),  // 'highlight' | 'subgraph'
+  source: (sessionStorage.getItem('reza:sessionSource') || 'all'),
+};
+
+function sessionsSendListRequest() {
+  postMsg({ type: 'listSessions', source: sessState.source, limit: 80 });
+}
+
+function relativeAge(iso) {
+  if (!iso) return '—';
+  const d = Date.parse(iso);
+  if (isNaN(d)) return iso;
+  const diff = (Date.now() - d) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+}
+
+function renderSessionsList() {
+  const listEl = document.getElementById('sessions-list');
+  const emptyEl = document.getElementById('sessions-empty');
+  const countEl = document.getElementById('sp-count');
+  if (!listEl || !emptyEl) return;
+
+  countEl.textContent = sessState.sessions.length
+    ? `(${sessState.sessions.length})`
+    : '';
+
+  if (sessState.sessions.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  const rows = sessState.sessions.map(s => {
+    const tool = (s.source_tool || 'manual').toLowerCase();
+    const taskText = (s.working_on || s.first_user_message || '(no summary)')
+      .replace(/\s+/g, ' ');
+    const shortId = s.id.length > 26 ? s.id.slice(0, 24) + '…' : s.id;
+    const age = relativeAge(s.last_turn_at || s.started_at);
+    const active = s.id === sessState.selectedId ? ' active' : '';
+    return `
+      <div class="sess-row tool-${escHtml(tool)}${active}" data-id="${escHtml(s.id)}">
+        <div class="sr-body">
+          <div class="sr-head">
+            <span class="tool">${escHtml(tool)}</span>
+            <span>·</span>
+            <span title="${escHtml(s.id)}">${escHtml(shortId)}</span>
+            <span>·</span>
+            <span>${escHtml(age)}</span>
+          </div>
+          <div class="sr-task" title="${escHtml(s.working_on || s.first_user_message || '')}">
+            ${escHtml(taskText)}
+          </div>
+          <div class="sr-stats">
+            <span class="stat"><b>${s.turn_count}</b> turns</span>
+            <span class="stat"><b>${s.token_total.toLocaleString()}</b> tok</span>
+            <span class="stat"><b>${(s.files_touched || []).length}</b> files</span>
+          </div>
+        </div>
+        <div class="sr-actions">
+          <button data-act="pack" title="Copy session pack to clipboard">⧉ Pack</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  listEl.innerHTML = rows;
+
+  listEl.querySelectorAll('.sess-row').forEach(el => {
+    const sid = el.getAttribute('data-id');
+    el.addEventListener('click', ev => {
+      // Action buttons handled below
+      if (ev.target.closest('button[data-act]')) return;
+      selectSession(sid);
+    });
+    const packBtn = el.querySelector('button[data-act="pack"]');
+    if (packBtn) {
+      packBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        postMsg({ type: 'copySessionPack', session_id: sid });
+      });
+    }
+  });
+}
+
+function selectSession(sessionId) {
+  if (!sessionId) return;
+  sessState.selectedId = sessionId;
+  postMsg({ type: 'selectSession', session_id: sessionId });
+  renderSessionsList();
+  const clearBtn = document.getElementById('sp-clear');
+  if (clearBtn) clearBtn.style.display = 'inline-block';
+}
+
+function clearSessionSelection() {
+  sessState.selectedId = null;
+  sessState.selectedScope = null;
+  renderSessionsList();
+  const clearBtn = document.getElementById('sp-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  // Re-render full graph.
+  renderD3();
+}
+
+function applySessionScope(scope) {
+  /* Apply the loaded session scope to the graph.  Two modes:
+     - highlight: keep all nodes visible, boost scope-nodes with the 'hot'
+       state and dim the rest.
+     - subgraph : hide non-scope nodes entirely. */
+  sessState.selectedScope = scope;
+
+  const fileSet = new Set((scope.files || []).map(f => f.replace(/\\/g, '/')));
+  const nodeIds = new Set(scope.node_ids || []);
+
+  // Dim classes on existing d3 selection
+  const nodesLayer = d3.select('#nodes-layer');
+  const edgesLayer = d3.select('#edges-layer');
+
+  if (sessState.mode === 'highlight') {
+    // All visible, scope ones highlighted.
+    nodesLayer.selectAll('g.node').each(function(d) {
+      const inScope = nodeIds.has(d.id) || fileSet.has((d.file_path || '').replace(/\\/g, '/'));
+      d3.select(this).select('circle').classed('dimmed', !inScope);
+      d3.select(this).select('text').classed('dimmed', !inScope);
+      if (inScope) {
+        d3.select(this).select('circle')
+          .attr('fill', STATE_COL.hot)
+          .attr('stroke', '#fb923c');
+      } else {
+        d3.select(this).select('circle')
+          .attr('fill', nodeColor(d))
+          .attr('stroke', d.state === 'locked' ? STATE_COL.locked : '#374151');
+      }
+    });
+    edgesLayer.selectAll('line.edge').classed('hidden', d => {
+      const a = d.source?.id ?? d.source;
+      const b = d.target?.id ?? d.target;
+      return !(nodeIds.has(a) || nodeIds.has(b));
+    });
+  } else {
+    // subgraph mode: hide everything not in scope.
+    nodesLayer.selectAll('g.node').each(function(d) {
+      const inScope = nodeIds.has(d.id) || fileSet.has((d.file_path || '').replace(/\\/g, '/'));
+      d3.select(this).style('display', inScope ? null : 'none');
+    });
+    edgesLayer.selectAll('line.edge').each(function(d) {
+      const a = d.source?.id ?? d.source;
+      const b = d.target?.id ?? d.target;
+      const inScope = nodeIds.has(a) && nodeIds.has(b);
+      d3.select(this).style('display', inScope ? null : 'none');
+    });
+  }
+}
+
+/* Wire up source filter + mode toggle + sync buttons + clear */
+document.addEventListener('DOMContentLoaded', () => {
+  const src = document.getElementById('sp-source-filter');
+  if (src) {
+    src.value = sessState.source;
+    src.addEventListener('change', () => {
+      sessState.source = src.value;
+      sessionStorage.setItem('reza:sessionSource', sessState.source);
+      sessionsSendListRequest();
+    });
+  }
+
+  const modeButtons = document.querySelectorAll('#sp-mode-toggle button[data-mode]');
+  modeButtons.forEach(btn => {
+    if (btn.dataset.mode === sessState.mode) btn.classList.add('active');
+    else btn.classList.remove('active');
+    btn.addEventListener('click', () => {
+      sessState.mode = btn.dataset.mode;
+      sessionStorage.setItem('reza:sessionMode', sessState.mode);
+      modeButtons.forEach(b => b.classList.toggle('active', b === btn));
+      if (sessState.selectedScope) {
+        if (sessState.mode === 'highlight') {
+          // un-hide everything, then re-apply
+          d3.select('#nodes-layer').selectAll('g.node').style('display', null);
+          d3.select('#edges-layer').selectAll('line.edge').style('display', null);
+        }
+        applySessionScope(sessState.selectedScope);
+      }
+    });
+  });
+
+  const sc = document.getElementById('sp-sync-cursor');
+  if (sc) sc.addEventListener('click', () => postMsg({ type: 'syncCursor' }));
+  const sx = document.getElementById('sp-sync-codex');
+  if (sx) sx.addEventListener('click', () => postMsg({ type: 'syncCodex' }));
+
+  const clearBtn = document.getElementById('sp-clear');
+  if (clearBtn) clearBtn.addEventListener('click', clearSessionSelection);
+});
 
 /* ---------- Message handler ---------- */
 window.addEventListener('message', ev => {
@@ -548,12 +939,21 @@ window.addEventListener('message', ev => {
   if (msg.type === 'init') {
     hideOverlay();
     buildGraph(msg.data);
+    if (sessState.selectedScope) {
+      // Reapply scope when graph is rebuilt (e.g. after refresh)
+      setTimeout(() => applySessionScope(sessState.selectedScope), 250);
+    }
   } else if (msg.type === 'updateSessionState') {
     applySessionUpdate(msg.data);
   } else if (msg.type === 'error') {
     showError(msg.message ?? 'Unknown error');
   } else if (msg.type === 'loading') {
     showLoading(msg.message ?? 'Loading…');
+  } else if (msg.type === 'sessionsList') {
+    sessState.sessions = msg.data?.sessions || [];
+    renderSessionsList();
+  } else if (msg.type === 'sessionScope') {
+    applySessionScope(msg.data?.scope || { files: [], node_ids: [] });
   }
 });
 
