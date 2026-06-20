@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .privacy import redact_text
 from .schema import get_connection
 
 
@@ -22,6 +23,7 @@ def add_turn(
     """
     if role not in ("user", "assistant", "system"):
         raise ValueError(f"Invalid role: {role!r}. Must be user, assistant, or system.")
+    content = redact_text(content)
     if not token_est:
         token_est = len(content) // 4
     with get_connection(db) as conn:
@@ -62,7 +64,7 @@ def add_turns_bulk(db: Path, session_id: str, turns: List[Dict]) -> int:
                 raise ValueError(
                     f"Invalid role at index {i}: {role!r}. Must be user, assistant, or system."
                 )
-            content = turn["content"]
+            content = redact_text(turn["content"])
             token_est = turn.get("token_est") or (len(content) // 4)
             conn.execute(
                 """
@@ -107,6 +109,8 @@ def search_turns(
     db: Path,
     query: str,
     session_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+    source_tool: Optional[str] = None,
     limit: int = 5,
 ) -> List[Dict]:
     """Full-text search across conversation turns using FTS5 + BM25 ranking.
@@ -118,29 +122,29 @@ def search_turns(
     if not query or not query.strip():
         return []
     with get_connection(db) as conn:
+        where = ["conversation_turns_fts MATCH ?"]
+        params: list[object] = [query]
         if session_id:
-            rows = conn.execute(
-                """
-                SELECT ct.*, bm25(conversation_turns_fts) AS score
-                FROM conversation_turns_fts
-                JOIN conversation_turns ct ON ct.id = conversation_turns_fts.turn_id
-                WHERE conversation_turns_fts MATCH ?
-                  AND conversation_turns_fts.session_id = ?
-                ORDER BY score
-                LIMIT ?
-                """,
-                (query, session_id, limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT ct.*, bm25(conversation_turns_fts) AS score
-                FROM conversation_turns_fts
-                JOIN conversation_turns ct ON ct.id = conversation_turns_fts.turn_id
-                WHERE conversation_turns_fts MATCH ?
-                ORDER BY score
-                LIMIT ?
-                """,
-                (query, limit),
-            ).fetchall()
+            where.append("conversation_turns_fts.session_id = ?")
+            params.append(session_id)
+        if thread_id:
+            where.append("s.thread_id = ?")
+            params.append(thread_id)
+        if source_tool:
+            where.append("(s.source_tool = ? OR s.llm_name = ?)")
+            params.extend([source_tool, source_tool])
+        params.append(limit)
+        rows = conn.execute(
+            f"""
+            SELECT ct.*, bm25(conversation_turns_fts) AS score,
+                   s.llm_name, s.source_tool, s.thread_id
+            FROM conversation_turns_fts
+            JOIN conversation_turns ct ON ct.id = conversation_turns_fts.turn_id
+            JOIN sessions s ON s.id = ct.session_id
+            WHERE {" AND ".join(where)}
+            ORDER BY score
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
     return [dict(r) for r in rows]

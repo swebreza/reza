@@ -1,8 +1,8 @@
 import { Metadata } from 'next'
-import DocPage from '@/components/DocPage'
-import { readContent, renderMdx, extractSection } from '@/lib/mdx'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
+import DocPage from '@/components/DocPage'
+import { readContent, renderMdx, extractSection } from '@/lib/mdx'
 
 export const metadata: Metadata = { title: 'Introduction' }
 
@@ -16,29 +16,32 @@ export default async function DocsIntroPage() {
   return (
     <DocPage
       title="Introduction"
-      description="reza is a Universal LLM Context Database — give any AI coding tool instant awareness of your project."
+      description="reza is a local-first Universal LLM Context Database for coding agents."
     >
       {content}
 
-      {/* Quick nav to next pages */}
-      <div className="mt-16 pt-8 border-t border-[#1e2730] grid sm:grid-cols-2 gap-4 not-prose">
-        <Link href="/docs/quick-start"
-          className="group flex items-center justify-between p-5 rounded-xl border border-[#1e2730] hover:border-teal-DEFAULT/40 bg-[#0d1117] transition-colors">
+      <div className="not-prose mt-16 grid gap-4 border-t border-[var(--border)] pt-8 sm:grid-cols-2">
+        <Link
+          href="/docs/quick-start"
+          className="group flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-5 transition-colors hover:border-teal-DEFAULT/40"
+        >
           <div>
-            <div className="text-xs text-teal-DEFAULT font-semibold mb-1">Next</div>
-            <div className="font-syne font-600 text-white">Quick Start</div>
-            <div className="text-xs text-slate-500 mt-0.5">Up and running in 2 minutes</div>
+            <div className="mb-1 text-xs font-semibold text-teal-DEFAULT">Next</div>
+            <div className="font-sans font-semibold text-white">Quick Start</div>
+            <div className="mt-0.5 text-xs text-slate-500">Up and running in 2 minutes</div>
           </div>
-          <ArrowRight size={16} className="text-slate-600 group-hover:text-teal-DEFAULT transition-colors" />
+          <ArrowRight size={16} className="text-slate-600 transition-colors group-hover:text-teal-DEFAULT" />
         </Link>
-        <Link href="/docs/how-it-works"
-          className="group flex items-center justify-between p-5 rounded-xl border border-[#1e2730] hover:border-teal-DEFAULT/40 bg-[#0d1117] transition-colors">
+        <Link
+          href="/docs/how-it-works"
+          className="group flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-5 transition-colors hover:border-teal-DEFAULT/40"
+        >
           <div>
-            <div className="text-xs text-slate-500 font-semibold mb-1">Concept</div>
-            <div className="font-syne font-600 text-white">How It Works</div>
-            <div className="text-xs text-slate-500 mt-0.5">Database schema + sync mechanisms</div>
+            <div className="mb-1 text-xs font-semibold text-slate-500">Concept</div>
+            <div className="font-sans font-semibold text-white">How It Works</div>
+            <div className="mt-0.5 text-xs text-slate-500">Database schema and sync mechanisms</div>
           </div>
-          <ArrowRight size={16} className="text-slate-600 group-hover:text-teal-DEFAULT transition-colors" />
+          <ArrowRight size={16} className="text-slate-600 transition-colors group-hover:text-teal-DEFAULT" />
         </Link>
       </div>
     </DocPage>

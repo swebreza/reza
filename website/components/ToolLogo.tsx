@@ -22,100 +22,37 @@ type ToolKey =
   | 'changelog'
   | 'contributing'
 
-const TOOL_COLORS: Record<string, string> = {
-  claude: '#d97757',
-  cursor: '#9b59b6',
-  codex: '#10a37f',
-  aider: '#22c55e',
-  kilocode: '#f59e0b',
-  copilot: '#6366f1',
-  continue: '#06b6d4',
-  codeium: '#10b981',
-  vscode: '#3b82f6',
+const TOOL_ICONS: Partial<Record<ToolKey, { src: string; alt: string }>> = {
+  claude: { src: '/tool-icons/anthropic.svg', alt: 'Claude Code' },
+  cursor: { src: '/tool-icons/cursor.svg', alt: 'Cursor' },
+  codex: { src: '/tool-icons/openai.svg', alt: 'Codex' },
+  aider: { src: '/tool-icons/aider.svg', alt: 'Aider' },
+  kilocode: { src: '/tool-icons/kilocode.svg', alt: 'Kilocode' },
+  copilot: { src: '/tool-icons/copilot.svg', alt: 'GitHub Copilot' },
+  continue: { src: '/tool-icons/continue.svg', alt: 'Continue' },
+  codeium: { src: '/tool-icons/codeium.svg', alt: 'Codeium' },
+  vscode: { src: '/tool-icons/vscode.svg', alt: 'Visual Studio Code' },
 }
 
-function BrandMark({
-  slug,
-  color,
-  alt,
-}: {
-  slug: string
-  color: string
-  alt: string
-}) {
-  const noHash = color.replace('#', '')
+function LocalIcon({ src, alt }: { src: string; alt: string }) {
   return (
     <img
-      src={`https://cdn.simpleicons.org/${slug}/${noHash}`}
+      src={src}
       alt={alt}
-      width={14}
-      height={14}
-      className="h-[14px] w-[14px] shrink-0"
+      width={18}
+      height={18}
+      className="h-[18px] w-[18px] shrink-0"
       loading="lazy"
       decoding="async"
     />
   )
 }
 
-function CircleMonogram({ label, color }: { label: string; color: string }) {
-  return (
-    <span
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
-      style={{ backgroundColor: color }}
-      aria-hidden="true"
-    >
-      {label}
-    </span>
-  )
-}
-
-function LocalGlyph({
-  label,
-  color,
-  bg = '#0f172a',
-}: {
-  label: string
-  color: string
-  bg?: string
-}) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-label={label}>
-      <rect x="1" y="1" width="14" height="14" rx="4" fill={bg} stroke={color} strokeWidth="1.2" />
-      <text
-        x="8"
-        y="10.2"
-        textAnchor="middle"
-        fontSize="6.3"
-        fontWeight="700"
-        fill={color}
-        fontFamily="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-      >
-        {label}
-      </text>
-    </svg>
-  )
-}
-
 export function ToolLogo({ tool }: { tool: ToolKey }) {
+  const icon = TOOL_ICONS[tool]
+  if (icon) return <LocalIcon src={icon.src} alt={icon.alt} />
+
   switch (tool) {
-    case 'claude':
-      return <BrandMark slug="anthropic" color={TOOL_COLORS.claude} alt="Claude Code" />
-    case 'cursor':
-      return <BrandMark slug="cursor" color={TOOL_COLORS.cursor} alt="Cursor" />
-    case 'codex':
-      return <LocalGlyph label="OA" color={TOOL_COLORS.codex} />
-    case 'aider':
-      return <CircleMonogram label="A" color={TOOL_COLORS.aider} />
-    case 'kilocode':
-      return <CircleMonogram label="K" color={TOOL_COLORS.kilocode} />
-    case 'copilot':
-      return <LocalGlyph label="GH" color={TOOL_COLORS.copilot} />
-    case 'continue':
-      return <LocalGlyph label="CN" color={TOOL_COLORS.continue} />
-    case 'codeium':
-      return <LocalGlyph label="CI" color={TOOL_COLORS.codeium} />
-    case 'vscode':
-      return <LocalGlyph label="VS" color={TOOL_COLORS.vscode} />
     case 'docs':
       return <FileCode2 size={14} className="text-slate-300" aria-hidden="true" />
     case 'quickstart':
@@ -139,7 +76,7 @@ export function ToolLogo({ tool }: { tool: ToolKey }) {
     case 'contributing':
       return <Github size={14} className="text-slate-300" aria-hidden="true" />
     default:
-      return <CircleMonogram label="R" color="#475569" />
+      return <FileCode2 size={14} className="text-slate-300" aria-hidden="true" />
   }
 }
 

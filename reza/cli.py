@@ -388,6 +388,29 @@ def _render_handoff_markdown(s: dict) -> str:
     return "\n".join(lines)
 
 
+def _render_thread_handoff_markdown(t: dict) -> str:
+    """Render a thread handoff dict as markdown."""
+    lines = [
+        f"# Thread Handoff: {t['id']}",
+        f"**Title:** {t.get('title') or t['id']}  |  **Sessions:** {len(t.get('sessions', []))}",
+        "",
+        "## Sessions",
+    ]
+    for session in t.get("sessions", []):
+        lines.append(
+            f"- [{session['id']}] {session['llm_name']} {session.get('status', '')}: "
+            f"{session.get('working_on') or ''}"
+        )
+    lines += ["", "## Conversation"]
+    for turn in t.get("turns", []):
+        lines.append(f"\n**{turn['role']} [{turn['session_id']}]:** {turn['content']}")
+    if t.get("search_results"):
+        lines += ["", f"## Relevant Context (search: \"{t.get('search_query', '')}\")"]
+        for hit in t["search_results"]:
+            lines.append(f"\n**{hit['role']} [{hit['session_id']}]:** {hit['content']}")
+    return "\n".join(lines)
+
+
 # ─────────────────────────────────────────────
 # session group
 # ─────────────────────────────────────────────
@@ -409,12 +432,23 @@ def session():
 @click.option("--llm", required=True, help="LLM name: claude, codex, cursor, aider, etc.")
 @click.option("--task", default="", help="What you are working on.")
 @click.option("--tags", default="", help="Comma-separated tags.")
+@click.option("--thread", "thread_id", default=None, help="Link this session to a specific thread.")
+@click.option("--continue", "continue_thread", is_flag=True, help="Link to the most recent thread.")
+@click.option("--no-thread", is_flag=True, help="Start without creating/linking a thread.")
 @click.pass_context
-def session_start(ctx, llm, task, tags):
+def session_start(ctx, llm, task, tags, thread_id, continue_thread, no_thread):
     """Start a new LLM session and get a session ID."""
     db = _require_db(ctx)
     from .session import start_session
-    session_id = start_session(db, llm, task, tags)
+    session_id = start_session(
+        db,
+        llm,
+        task,
+        tags,
+        thread_id=thread_id,
+        continue_thread=continue_thread,
+        no_thread=no_thread,
+    )
     # Write current session ID so Stop hook can find it without any args
     current_session_file = db.parent / "current_session"
     current_session_file.write_text(session_id, encoding="utf-8")
@@ -602,10 +636,12 @@ def session_turns_list(ctx, session_id, as_json):
 @session.command("search")
 @click.argument("query")
 @click.option("--id", "session_id", default=None, help="Restrict search to one session (default: all sessions).")
+@click.option("--thread", "thread_id", default=None, help="Restrict search to one thread.")
+@click.option("--source", "source_tool", default=None, help="Restrict search to one source tool.")
 @click.option("--limit", default=5, show_default=True, help="Max results to return.")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def session_search(ctx, query, session_id, limit, as_json):
+def session_search(ctx, query, session_id, thread_id, source_tool, limit, as_json):
     """Search conversation history by keyword using full-text search.
 
     \b
@@ -616,7 +652,14 @@ def session_search(ctx, query, session_id, limit, as_json):
     """
     db = _require_db(ctx)
     from .turns import search_turns
-    results = search_turns(db, query, session_id=session_id, limit=limit)
+    results = search_turns(
+        db,
+        query,
+        session_id=session_id,
+        thread_id=thread_id,
+        source_tool=source_tool,
+        limit=limit,
+    )
     if as_json:
         click.echo(json.dumps(results, indent=2, default=str))
         return
@@ -638,6 +681,7 @@ def session_search(ctx, query, session_id, limit, as_json):
 
 @session.command("handoff")
 @click.option("--id", "session_id", default=None, help="Specific session ID (default: latest interrupted).")
+@click.option("--thread", "thread_id", default=None, help="Specific thread ID (returns thread handoff).")
 @click.option("--format", "fmt", default="markdown",
               type=click.Choice(["markdown", "json"]),
               show_default=True, help="Output format.")
@@ -648,7 +692,7 @@ def session_search(ctx, query, session_id, limit, as_json):
 @click.option("--json", "as_json", is_flag=True, hidden=True,
               help="Deprecated: use --format json instead.")
 @click.pass_context
-def session_handoff(ctx, session_id, fmt, budget_tokens, search_query, as_json):
+def session_handoff(ctx, session_id, thread_id, fmt, budget_tokens, search_query, as_json):
     """Show interrupted session context — ready to paste into any AI tool.
 
     \b
@@ -666,7 +710,12 @@ def session_handoff(ctx, session_id, fmt, budget_tokens, search_query, as_json):
         fmt = "json"
 
     try:
-        data = get_handoff_data(db, session_id=session_id, budget_tokens=budget_tokens)
+        data = get_handoff_data(
+            db,
+            session_id=session_id,
+            thread_id=thread_id,
+            budget_tokens=budget_tokens,
+        )
     except ValueError as e:
         err_console.print(f"[red]Error:[/red] {e}")
         ctx.exit(1)
@@ -678,7 +727,10 @@ def session_handoff(ctx, session_id, fmt, budget_tokens, search_query, as_json):
 
     # Attach search results if --search provided
     if search_query:
-        search_hits = search_turns(db, search_query, session_id=data["id"], limit=5)
+        if data.get("type") == "thread":
+            search_hits = search_turns(db, search_query, thread_id=data["id"], limit=5)
+        else:
+            search_hits = search_turns(db, search_query, session_id=data["id"], limit=5)
         data["search_results"] = search_hits
         data["search_query"] = search_query
     else:
@@ -689,7 +741,10 @@ def session_handoff(ctx, session_id, fmt, budget_tokens, search_query, as_json):
         click.echo(json.dumps(data, indent=2, default=str))
         return
 
-    click.echo(_render_handoff_markdown(data))
+    if data.get("type") == "thread":
+        click.echo(_render_thread_handoff_markdown(data))
+    else:
+        click.echo(_render_handoff_markdown(data))
 
 
 # ─────────────────────────────────────────────
@@ -952,16 +1007,335 @@ def sync_codex_cmd(ctx, project_dir, as_json):
 @main.command("sync-all")
 @click.option("--dir", "project_dir", default=".", show_default=True,
               help="Project root directory.")
+@click.option("--tool", default=None, help="Sync only one adapter/tool.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 @click.pass_context
-def sync_all_cmd(ctx, project_dir):
-    """Run every cross-tool sync (Cursor + Codex + Claude) in one go."""
-    ctx.invoke(sync_cursor_cmd, project_dir=project_dir, as_json=False)
-    ctx.invoke(sync_codex_cmd,  project_dir=project_dir, as_json=False)
-    # sync-claude is per-file; surface the command but don't auto-invoke.
-    console.print(
-        "\n[dim]For Claude Code: run [bold]reza sync-claude <path/to/.jsonl>[/bold] "
-        "or use the Stop hook installed via [bold]reza install-claude-hook[/bold].[/dim]"
-    )
+def sync_all_cmd(ctx, project_dir, tool, as_json):
+    """Run configured cross-tool conversation adapters."""
+    import sqlite3 as _sq
+    from .adapters import sync_adapters
+
+    db = _require_db(ctx)
+    proj = Path(project_dir).resolve()
+    conn = _sq.connect(str(db))
+    conn.row_factory = _sq.Row
+    try:
+        result = sync_adapters(conn, proj, tool=tool)
+    finally:
+        conn.close()
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    for name, res in result["tools"].items():
+        console.print(
+            f"[bold]{name}[/bold]: sources={res.get('sources_found', 0)} "
+            f"imported={res.get('sessions_imported', 0)} "
+            f"updated={res.get('sessions_updated', 0)} "
+            f"turns={res.get('turns_inserted', 0)}"
+        )
+
+
+@main.command("install-hooks")
+@click.option("--dir", "project_dir", default=".", show_default=True,
+              help="Project root directory.")
+@click.option("--tool", default=None, help="Register one tool only.")
+@click.option("--list", "list_only", is_flag=True, help="List current adapter config.")
+@click.option("--uninstall", is_flag=True, help="Remove adapter config.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def install_hooks_cmd(ctx, project_dir, tool, list_only, uninstall, as_json):
+    """Configure conversation adapters for reza watch/sync-all."""
+    from .adapters import adapter_config_path, install_adapter_config, load_adapter_config
+    from .registry import register_project
+
+    db = _require_db(ctx)
+    proj = Path(project_dir).resolve()
+    path = adapter_config_path(proj)
+
+    if uninstall:
+        if path.exists():
+            path.unlink()
+        payload = {"removed": str(path)}
+    elif list_only:
+        payload = load_adapter_config(proj)
+    else:
+        payload = install_adapter_config(proj, tool=tool)
+        try:
+            register_project(proj, db)
+        except OSError as e:
+            payload["registry_warning"] = str(e)
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    console.print(json.dumps(payload, indent=2, default=str))
+
+
+# ─────────────────────────────────────────────
+# thread group
+# ─────────────────────────────────────────────
+
+@main.group()
+def thread():
+    """Manage cross-tool task threads."""
+
+
+@thread.command("create")
+@click.option("--title", default="", help="Thread title.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def thread_create(ctx, title, as_json):
+    from .threads import create_thread, get_thread
+
+    db = _require_db(ctx)
+    tid = create_thread(db, title)
+    payload = get_thread(db, tid) or {"id": tid, "title": title}
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    console.print(f"[green]Thread created:[/green] [cyan]{tid}[/cyan]")
+
+
+@thread.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def thread_list(ctx, as_json):
+    from .threads import list_threads
+
+    db = _require_db(ctx)
+    rows = list_threads(db)
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+    table = Table(title="Threads", box=box.SIMPLE)
+    table.add_column("ID", style="cyan")
+    table.add_column("Title")
+    table.add_column("Sessions", justify="right")
+    for r in rows:
+        table.add_row(r["id"], r.get("title") or "", str(r.get("session_count", 0)))
+    console.print(table)
+
+
+@thread.command("show")
+@click.option("--id", "thread_id", required=True, help="Thread ID.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def thread_show(ctx, thread_id, as_json):
+    from .threads import get_thread
+
+    db = _require_db(ctx)
+    payload = get_thread(db, thread_id)
+    if not payload:
+        err_console.print(f"[red]Thread not found:[/red] {thread_id}")
+        ctx.exit(1)
+        return
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(_render_thread_handoff_markdown({**payload, "turns": []}))
+
+
+@thread.command("link")
+@click.option("--session", "session_id", required=True, help="Session ID.")
+@click.option("--thread", "thread_id", required=True, help="Thread ID.")
+@click.pass_context
+def thread_link(ctx, session_id, thread_id):
+    from .threads import link_session
+
+    db = _require_db(ctx)
+    if not link_session(db, session_id, thread_id):
+        err_console.print("[red]Could not link session to thread.[/red]")
+        ctx.exit(1)
+        return
+    console.print(f"[green]Linked[/green] {session_id} -> {thread_id}")
+
+
+@thread.command("unlink")
+@click.option("--session", "session_id", required=True, help="Session ID.")
+@click.pass_context
+def thread_unlink(ctx, session_id):
+    from .threads import unlink_session
+
+    db = _require_db(ctx)
+    if not unlink_session(db, session_id):
+        err_console.print("[red]Could not unlink session.[/red]")
+        ctx.exit(1)
+        return
+    console.print(f"[green]Unlinked[/green] {session_id}")
+
+
+# ─────────────────────────────────────────────
+# context group
+# ─────────────────────────────────────────────
+
+@main.group()
+def context():
+    """Build compact LLM context packets."""
+
+
+@context.command("current")
+@click.option("--budget", "budget_tokens", default=8000, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def context_current(ctx, budget_tokens, as_json):
+    from .context.memory import build_current_context, render_context_markdown
+
+    db = _require_db(ctx)
+    payload = build_current_context(db, budget_tokens=budget_tokens)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(render_context_markdown(payload))
+
+
+@context.command("search")
+@click.argument("query")
+@click.option("--thread", "thread_id", default=None, help="Restrict to thread ID.")
+@click.option("--limit", default=10, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def context_search(ctx, query, thread_id, limit, as_json):
+    from .context.memory import render_context_markdown, search_context
+
+    db = _require_db(ctx)
+    payload = search_context(db, query, limit=limit, thread_id=thread_id)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(render_context_markdown(payload))
+
+
+@context.command("thread")
+@click.option("--id", "thread_id", required=True, help="Thread ID.")
+@click.option("--format", "fmt", default="markdown",
+              type=click.Choice(["markdown", "json"]), show_default=True)
+@click.pass_context
+def context_thread(ctx, thread_id, fmt):
+    from .threads import get_thread_handoff_data
+
+    db = _require_db(ctx)
+    payload = get_thread_handoff_data(db, thread_id=thread_id)
+    if not payload:
+        err_console.print(f"[red]Thread not found:[/red] {thread_id}")
+        ctx.exit(1)
+        return
+    if fmt == "json":
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(_render_thread_handoff_markdown(payload))
+
+
+@context.command("pack")
+@click.option("--files", default="", help="Comma-separated file list to mention in packet.")
+@click.option("--budget", "budget_tokens", default=8000, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def context_pack(ctx, files, budget_tokens, as_json):
+    from .context.memory import build_current_context, render_context_markdown
+
+    db = _require_db(ctx)
+    payload = build_current_context(db, budget_tokens=budget_tokens)
+    payload["files_requested"] = [f.strip() for f in files.split(",") if f.strip()]
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(render_context_markdown(payload))
+
+
+# ─────────────────────────────────────────────
+# global group
+# ─────────────────────────────────────────────
+
+@main.group(name="global")
+def global_group():
+    """PC-wide Reza registry and search."""
+
+
+@global_group.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def global_status(as_json):
+    from .registry import registry_status
+
+    payload = registry_status()
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    console.print(json.dumps(payload, indent=2, default=str))
+
+
+@global_group.command("projects")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def global_projects(as_json):
+    from .registry import list_projects
+
+    payload = list_projects()
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    table = Table(title="Reza Projects", box=box.SIMPLE)
+    table.add_column("Project")
+    table.add_column("DB")
+    for p in payload:
+        table.add_row(p["project_path"], p["db_path"])
+    console.print(table)
+
+
+@global_group.command("search")
+@click.argument("query")
+@click.option("--limit", default=10, show_default=True, type=int)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def global_search(query, limit, as_json):
+    from .registry import search_global
+
+    payload = search_global(query, limit=limit)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    for hit in payload:
+        console.print(
+            f"[bold]{hit['project_name']}[/bold] {hit['role']} "
+            f"[dim]{hit['session_id']}[/dim]: {hit['content'][:200]}"
+        )
+
+
+@global_group.command("handoff")
+@click.option("--recent", is_flag=True, help="Return the most recent registered project handoff.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def global_handoff(recent, as_json):
+    from .registry import recent_handoff
+
+    payload = recent_handoff(limit=1 if recent else 5)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    for item in payload:
+        if item.get("type") == "thread":
+            click.echo(_render_thread_handoff_markdown(item))
+        else:
+            click.echo(_render_handoff_markdown(item))
+
+
+# ─────────────────────────────────────────────
+# privacy group
+# ─────────────────────────────────────────────
+
+@main.group()
+def privacy():
+    """Inspect local privacy and redaction settings."""
+
+
+@privacy.command("audit")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def privacy_audit(as_json):
+    from .privacy import audit_privacy
+
+    payload = audit_privacy()
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    console.print(json.dumps(payload, indent=2, default=str))
 
 
 # ─────────────────────────────────────────────

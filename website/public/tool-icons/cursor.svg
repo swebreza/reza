@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Cursor">
+  <rect width="32" height="32" rx="8" fill="#111217"/>
+  <path fill="#f8fafc" d="M8 5.8 25.5 16 8 26.2V5.8Zm4.4 7.4v5.6L17.2 16l-4.8-2.8Z"/>
+  <path fill="#9b59b6" d="M18 9.2 25.5 16 18 22.8l-2.9-1.7L20.6 16l-5.5-5.1L18 9.2Z"/>
+</svg>

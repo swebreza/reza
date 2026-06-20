@@ -4,7 +4,7 @@ import TableOfContents from '@/components/TableOfContents'
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#0b1220] text-white">
+    <div className="min-h-screen bg-[var(--bg)] text-white">
       <Navbar />
       <div className="max-w-[1500px] mx-auto flex pt-16 px-4 md:px-8 xl:px-10">
         <Sidebar />

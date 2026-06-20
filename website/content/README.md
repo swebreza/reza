@@ -41,6 +41,41 @@ reza creates a local SQLite database (`.reza/context.db`) in your project that s
 
 Any AI tool can query this database instead of scanning your files.
 
+### Current memory status
+
+| Area | Status |
+|------|--------|
+| Project memory | `.reza/context.db` stores files, sessions, turns, FTS search, sources, checkpoints, threads, and privacy rules |
+| Direct transcript sync | Cursor, Codex, and Aider can sync local transcript/history files through `reza sync-all` |
+| Watch mode | `reza watch` updates project files, ingests `.reza/handoffs/`, and periodically runs configured conversation adapters |
+| Thread continuity | `reza thread ...`, `reza session handoff --thread ...`, and `reza session search --thread ...` are available |
+| PC-wide registry | `~/.reza/registry.db` tracks registered projects for `reza global ...` commands |
+| Fallback ingestion | GUI or unsupported tools can drop `.md` or `.json` exports into `.reza/handoffs/` |
+| Privacy | Built-in redaction covers common assignment-style secrets and token formats before storage |
+
+### Local recording verification
+
+Use these commands on a project after installing Reza to prove that local agent history is being captured, indexed, and available to other tools:
+
+```bash
+reza install-hooks
+reza sync-all
+reza session list --json
+reza session search "phrase from this chat" --json
+reza context current --budget 8000
+reza global status --json
+```
+
+Expected result:
+
+- `.reza/adapters.json` lists detected local tools and transcript sources.
+- `.reza/context.db` contains imported sessions and `conversation_turns` rows.
+- `reza session search ...` returns matching prior user/assistant turns with `source_tool`, `source_path`, and `thread_id`.
+- `reza context current ...` returns a compact thread-aware context packet that any coding agent can paste or fetch.
+- `~/.reza/registry.db` contains this project so `reza global search ...` can route across the PC.
+
+For tools without a stable local transcript path, export the chat into `.reza/handoffs/` and keep `reza watch` running.
+
 ---
 
 ## Quick Start

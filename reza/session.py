@@ -12,9 +12,27 @@ def _new_id(llm_name: str) -> str:
     return f"{llm_name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:8]}"
 
 
-def start_session(db: Path, llm_name: str, working_on: str = "", tags: str = "") -> str:
+def start_session(
+    db: Path,
+    llm_name: str,
+    working_on: str = "",
+    tags: str = "",
+    thread_id: Optional[str] = None,
+    continue_thread: bool = False,
+    no_thread: bool = False,
+) -> str:
     """Create a new session and return its ID."""
     session_id = _new_id(llm_name)
+    linked_thread = None
+    if not no_thread:
+        from .threads import create_thread, latest_thread
+        if thread_id:
+            linked_thread = thread_id
+            create_thread(db, working_on or thread_id, thread_id=thread_id)
+        elif continue_thread:
+            linked_thread = latest_thread(db)
+        else:
+            linked_thread = create_thread(db, working_on or session_id)
     with get_connection(db) as conn:
         # Mark any previous active sessions from the same LLM as interrupted
         conn.execute(
@@ -23,10 +41,10 @@ def start_session(db: Path, llm_name: str, working_on: str = "", tags: str = "")
         )
         conn.execute(
             """
-            INSERT INTO sessions (id, llm_name, status, working_on, tags, started_at)
-            VALUES (?, ?, 'active', ?, ?, datetime('now'))
+            INSERT INTO sessions (id, llm_name, status, working_on, tags, thread_id, started_at)
+            VALUES (?, ?, 'active', ?, ?, ?, datetime('now'))
             """,
-            (session_id, llm_name, working_on, tags),
+            (session_id, llm_name, working_on, tags, linked_thread),
         )
     return session_id
 
@@ -109,6 +127,7 @@ def get_handoff_info(db: Path) -> List[Dict]:
 def get_handoff_data(
     db: Path,
     session_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
     budget_tokens: Optional[int] = None,
 ) -> Optional[Dict]:
     """Return enriched handoff dict for a session, including conversation turns.
@@ -122,6 +141,10 @@ def get_handoff_data(
       - turns_truncated: int — how many oldest turns were dropped due to budget
       - budget_applied: int or None — the budget_tokens value used
     """
+    if thread_id:
+        from .threads import get_thread_handoff_data
+        return get_thread_handoff_data(db, thread_id=thread_id, budget_tokens=budget_tokens)
+
     with get_connection(db) as conn:
         if session_id:
             row = conn.execute(

@@ -25,8 +25,8 @@ export default function Navbar() {
     <header
       className={`fixed top-0 left-0 right-0 z-50 h-16 transition-all duration-300 ${
         scrolled
-          ? 'glass border-b border-[#1e2730]/80 bg-[#0b0f16]/80 dark:bg-[#0b0f16]/80'
-          : 'bg-transparent'
+          ? 'border-b border-[var(--border)] bg-[var(--bg)] shadow-[0_16px_40px_-36px_rgba(0,0,0,0.9)]'
+          : 'bg-[var(--bg)]'
       }`}
     >
       <div className="max-w-6xl mx-auto h-full px-6 flex items-center justify-between">
@@ -39,7 +39,7 @@ export default function Navbar() {
             height={32}
             className="rounded-lg group-hover:scale-105 transition-transform"
           />
-          <span className="font-syne font-700 text-lg text-white">reza</span>
+          <span className="font-sans font-bold text-lg text-white">reza</span>
         </Link>
 
         {/* Desktop nav */}
@@ -94,7 +94,7 @@ export default function Navbar() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="md:hidden border-t border-[#1e2730] bg-[#0d1117] px-6 py-4 flex flex-col gap-1">
+        <div className="md:hidden border-t border-[var(--border)] bg-[var(--bg-elevated)] px-6 py-4 flex flex-col gap-1">
           {[
             { label: 'Docs', href: '/docs' },
             { label: 'Quick Start', href: '/docs/quick-start' },

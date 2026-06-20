@@ -38,7 +38,7 @@ export default function TableOfContents() {
 
   return (
     <nav className="w-64 flex-shrink-0 sticky top-20 h-[calc(100vh-5rem)] overflow-y-auto py-4 pl-4 hidden 2xl:block">
-      <div className="rounded-xl border border-[#273142] bg-[#0f1623] p-3">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
       <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3 px-2">
         On this page
       </p>

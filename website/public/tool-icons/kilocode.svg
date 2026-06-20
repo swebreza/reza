@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Kilocode">
+  <rect width="32" height="32" rx="8" fill="#211806"/>
+  <path fill="#f59e0b" d="M9 7h4v7.2L19.6 7h5l-7.4 8 7.9 10h-5.2L13 16.2V25H9V7Z"/>
+  <path fill="#fde68a" d="M13 14.2 19.6 7h2.6l-7 7.6L23.1 25h-3.2L13 16.2v-2Z" opacity=".52"/>
+</svg>

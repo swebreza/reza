@@ -12,7 +12,7 @@ export default async function CliReferencePage() {
   return (
     <DocPage
       title="CLI Reference"
-      description="Complete reference for all reza commands — core, sessions, threads, exports, locks, and git hooks."
+      description="Complete reference for all reza commands: core, sessions, threads, exports, locks, and git hooks."
     >
       {content}
     </DocPage>

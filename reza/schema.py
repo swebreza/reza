@@ -50,7 +50,49 @@ CREATE TABLE IF NOT EXISTS sessions (
     tags                 TEXT,
     source_tool          TEXT,
     source_path          TEXT,
-    source_id            TEXT
+    source_id            TEXT,
+    thread_id            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS threads (
+    id          TEXT PRIMARY KEY,
+    title       TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now')),
+    status      TEXT DEFAULT 'active'
+);
+
+CREATE TABLE IF NOT EXISTS conversation_sources (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     TEXT,
+    adapter_name   TEXT NOT NULL,
+    source_path    TEXT,
+    source_id      TEXT,
+    project_path   TEXT,
+    last_seen_at   TEXT DEFAULT (datetime('now')),
+    metadata_json  TEXT DEFAULT '{}',
+    UNIQUE(adapter_name, source_path),
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS sync_checkpoints (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    adapter_name    TEXT NOT NULL,
+    source_path     TEXT NOT NULL,
+    position        INTEGER DEFAULT 0,
+    content_hash    TEXT,
+    last_synced_at  TEXT DEFAULT (datetime('now')),
+    metadata_json   TEXT DEFAULT '{}',
+    UNIQUE(adapter_name, source_path)
+);
+
+CREATE TABLE IF NOT EXISTS privacy_rules (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_type   TEXT NOT NULL,
+    pattern     TEXT NOT NULL,
+    action      TEXT NOT NULL DEFAULT 'redact',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS changes (
@@ -86,6 +128,9 @@ CREATE TABLE IF NOT EXISTS file_locks (
 
 CREATE INDEX IF NOT EXISTS idx_files_type     ON files(file_type);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status);
+CREATE INDEX IF NOT EXISTS idx_sources_session ON conversation_sources(session_id);
+CREATE INDEX IF NOT EXISTS idx_sources_adapter ON conversation_sources(adapter_name);
 CREATE INDEX IF NOT EXISTS idx_changes_file   ON changes(file_path);
 CREATE INDEX IF NOT EXISTS idx_changes_session ON changes(session_id);
 CREATE INDEX IF NOT EXISTS idx_changes_time    ON changes(changed_at);
@@ -289,9 +334,56 @@ def _auto_migrate(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE sessions ADD COLUMN source_path TEXT")
         if "source_id" not in existing_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN source_id TEXT")
+        if "thread_id" not in existing_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN thread_id TEXT")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sessions_source "
             "ON sessions(source_tool, source_path)"
+        )
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS threads (
+                id          TEXT PRIMARY KEY,
+                title       TEXT,
+                created_at  TEXT DEFAULT (datetime('now')),
+                updated_at  TEXT DEFAULT (datetime('now')),
+                status      TEXT DEFAULT 'active'
+            );
+            CREATE TABLE IF NOT EXISTS conversation_sources (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id     TEXT,
+                adapter_name   TEXT NOT NULL,
+                source_path    TEXT,
+                source_id      TEXT,
+                project_path   TEXT,
+                last_seen_at   TEXT DEFAULT (datetime('now')),
+                metadata_json  TEXT DEFAULT '{}',
+                UNIQUE(adapter_name, source_path),
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            );
+            CREATE TABLE IF NOT EXISTS sync_checkpoints (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                adapter_name    TEXT NOT NULL,
+                source_path     TEXT NOT NULL,
+                position        INTEGER DEFAULT 0,
+                content_hash    TEXT,
+                last_synced_at  TEXT DEFAULT (datetime('now')),
+                metadata_json   TEXT DEFAULT '{}',
+                UNIQUE(adapter_name, source_path)
+            );
+            CREATE TABLE IF NOT EXISTS privacy_rules (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_type   TEXT NOT NULL,
+                pattern     TEXT NOT NULL,
+                action      TEXT NOT NULL DEFAULT 'redact',
+                enabled     INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_thread ON sessions(thread_id);
+            CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status);
+            CREATE INDEX IF NOT EXISTS idx_sources_session ON conversation_sources(session_id);
+            CREATE INDEX IF NOT EXISTS idx_sources_adapter ON conversation_sources(adapter_name);
+            """
         )
         conn.commit()
     except sqlite3.OperationalError:

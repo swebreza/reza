@@ -57,7 +57,7 @@ class TestSessionCli:
         assert len(payload["search_results"]) >= 1
         assert any("middleware" in hit["content"] for hit in payload["search_results"])
 
-    def test_session_search_json_preserves_raw_content(self, tmp_path, monkeypatch):
+    def test_session_search_json_redacts_secret_content(self, tmp_path, monkeypatch):
         _init_project(tmp_path)
         monkeypatch.chdir(tmp_path)
 
@@ -76,7 +76,8 @@ class TestSessionCli:
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert len(payload) == 1
-        assert raw_secret in payload[0]["content"]
+        assert raw_secret not in payload[0]["content"]
+        assert "api_key=[REDACTED]" in payload[0]["content"]
 
     def test_session_save_errors_for_unknown_session_id(self, tmp_path, monkeypatch):
         _init_project(tmp_path)

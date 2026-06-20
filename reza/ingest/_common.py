@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from reza.privacy import redact_text
 
 
 @dataclass
@@ -41,6 +44,22 @@ def _reza_id_for(session: ParsedSession) -> str:
     return f"{session.source_tool}-{uuid.uuid4().hex[:12]}"
 
 
+def _thread_id_for(session: ParsedSession) -> str:
+    if session.source_id:
+        short = session.source_id.replace("-", "")[:12]
+    else:
+        short = uuid.uuid4().hex[:12]
+    return f"thread-{session.source_tool}-{short}"
+
+
+def _thread_title_for(session: ParsedSession) -> str:
+    title = (session.working_on or "").strip()
+    if title:
+        title = re.sub(r"\s+", " ", title)
+        return title[:120]
+    return f"{session.source_tool} session {session.source_id or ''}".strip()
+
+
 def upsert_imported_session(
     conn: sqlite3.Connection, session: ParsedSession
 ) -> tuple[str, int, int]:
@@ -66,6 +85,15 @@ def upsert_imported_session(
     ).fetchone()
 
     files_csv = ",".join(session.files_touched) if session.files_touched else ""
+    thread_id = _thread_id_for(session)
+    thread_title = _thread_title_for(session)
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO threads (id, title, status, created_at, updated_at)
+        VALUES (?, ?, 'active', COALESCE(?, datetime('now')), datetime('now'))
+        """,
+        (thread_id, thread_title, session.started_at),
+    )
 
     if existing:
         sid = existing["id"] if hasattr(existing, "keys") else existing[0]
@@ -76,7 +104,8 @@ def upsert_imported_session(
                  files_modified = COALESCE(NULLIF(?, ''), files_modified),
                  source_tool    = ?,
                  source_path    = ?,
-                 source_id      = ?
+                 source_id      = ?,
+                 thread_id      = COALESCE(thread_id, ?)
                WHERE id = ?""",
             (
                 session.llm_name,
@@ -85,6 +114,7 @@ def upsert_imported_session(
                 session.source_tool,
                 session.source_path,
                 session.source_id,
+                thread_id,
                 sid,
             ),
         )
@@ -93,9 +123,9 @@ def upsert_imported_session(
             """INSERT INTO sessions
                  (id, llm_name, status, started_at, working_on,
                   files_modified,
-                  source_tool, source_path, source_id)
+                  source_tool, source_path, source_id, thread_id)
                VALUES (?, ?, 'completed', COALESCE(?, datetime('now')), ?,
-                       ?, ?, ?, ?)""",
+                       ?, ?, ?, ?, ?)""",
             (
                 sid,
                 session.llm_name,
@@ -105,8 +135,10 @@ def upsert_imported_session(
                 session.source_tool,
                 session.source_path,
                 session.source_id,
+                thread_id,
             ),
         )
+    conn.execute("UPDATE threads SET updated_at = datetime('now') WHERE id = ?", (thread_id,))
 
     already = conn.execute(
         "SELECT COUNT(*) AS n FROM conversation_turns WHERE session_id = ?",
@@ -123,7 +155,7 @@ def upsert_imported_session(
     next_idx = already_n
     rows = []
     for t in new_tail:
-        content = t.content or ""
+        content = redact_text(t.content or "")
         rows.append((sid, t.role, content, max(1, len(content) // 4), next_idx))
         next_idx += 1
 
@@ -132,6 +164,32 @@ def upsert_imported_session(
              (session_id, role, content, token_est, turn_index, recorded_at)
            VALUES (?, ?, ?, ?, ?, datetime('now'))""",
         rows,
+    )
+    conn.execute(
+        """INSERT INTO conversation_sources
+             (session_id, adapter_name, source_path, source_id, project_path, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(adapter_name, source_path) DO UPDATE SET
+             session_id = excluded.session_id,
+             source_id = excluded.source_id,
+             project_path = excluded.project_path,
+             last_seen_at = datetime('now')""",
+        (
+            sid,
+            session.source_tool,
+            session.source_path,
+            session.source_id,
+            session.project_cwd,
+        ),
+    )
+    conn.execute(
+        """INSERT INTO sync_checkpoints
+             (adapter_name, source_path, position, last_synced_at)
+           VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(adapter_name, source_path) DO UPDATE SET
+             position = excluded.position,
+             last_synced_at = datetime('now')""",
+        (session.source_tool, session.source_path, total),
     )
     return (sid, len(rows), already_n)
 

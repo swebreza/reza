@@ -9,15 +9,15 @@ interface Props {
 
 export default function DocPage({ title, description, children, badge }: Props) {
   return (
-    <article className="max-w-3xl">
+    <article className="max-w-[76ch]">
       {/* Page header */}
-      <header className="mb-10 border-b border-[#1e2730] pb-8">
+      <header className="mb-10 border-b border-[var(--border)] pb-8">
         {badge && (
-          <span className="inline-block mb-3 px-3 py-1 rounded-full text-xs font-semibold border border-teal-DEFAULT/30 bg-teal-DEFAULT/10 text-teal-DEFAULT">
+          <span className="inline-block mb-3 px-3 py-1 rounded-md text-xs font-semibold border border-teal-DEFAULT/30 bg-teal-DEFAULT/10 text-teal-DEFAULT">
             {badge}
           </span>
         )}
-        <h1 className="font-syne font-800 text-4xl md:text-5xl tracking-tight text-white mb-3">{title}</h1>
+        <h1 className="font-sans font-extrabold text-4xl md:text-5xl tracking-normal text-white mb-3">{title}</h1>
         {description && (
           <p className="text-slate-400 text-lg leading-8">{description}</p>
         )}
@@ -25,8 +25,8 @@ export default function DocPage({ title, description, children, badge }: Props) 
 
       {/* MDX content */}
       <div className="
-        prose prose-invert max-w-none text-[17px] leading-8
-        prose-headings:font-syne prose-headings:tracking-tight prose-headings:font-700
+        prose prose-invert max-w-none text-[16px] leading-8
+        prose-headings:font-sans prose-headings:tracking-normal prose-headings:font-bold
         prose-h2:text-[1.75rem] prose-h2:mt-14 prose-h2:mb-5 prose-h2:text-white prose-h2:scroll-mt-24
         prose-h3:text-[1.35rem] prose-h3:mt-10 prose-h3:mb-4 prose-h3:text-white
         prose-h4:text-lg prose-h4:mt-8 prose-h4:mb-3 prose-h4:text-slate-200
@@ -38,7 +38,7 @@ export default function DocPage({ title, description, children, badge }: Props) 
         prose-blockquote:not-italic prose-blockquote:rounded-r-lg prose-blockquote:px-5 prose-blockquote:py-3 prose-blockquote:text-slate-300
         prose-code:text-teal-DEFAULT prose-code:bg-teal-DEFAULT/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md
         prose-code:before:content-none prose-code:after:content-none
-        prose-pre:my-8 prose-pre:bg-[#0d1117] prose-pre:border prose-pre:border-[#273142] prose-pre:rounded-xl prose-pre:px-5 prose-pre:py-4
+        prose-pre:my-8 prose-pre:bg-[var(--bg-elevated)] prose-pre:border prose-pre:border-[var(--border)] prose-pre:rounded-lg prose-pre:px-5 prose-pre:py-4
         prose-table:my-8 prose-table:text-sm prose-th:text-slate-200 prose-th:font-600
         prose-td:text-slate-300 prose-tr:border-[#273142]
         prose-hr:my-10 prose-hr:border-[#273142]

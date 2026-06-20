@@ -37,13 +37,14 @@ const config: Config = {
         },
       },
       fontFamily: {
-        syne: ['var(--font-syne)', 'sans-serif'],
-        dm: ['var(--font-dm-sans)', 'sans-serif'],
-        mono: ['var(--font-jetbrains)', 'monospace'],
+        sans: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        syne: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        dm: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
       },
       backgroundImage: {
-        'brand-gradient': 'linear-gradient(135deg, #00d4aa 0%, #38b2f8 50%, #7c5cfc 100%)',
-        'brand-gradient-r': 'linear-gradient(270deg, #00d4aa 0%, #38b2f8 50%, #7c5cfc 100%)',
+        'brand-gradient': 'none',
+        'brand-gradient-r': 'none',
       },
       animation: {
         'fade-up': 'fadeUp 0.6s ease-out forwards',

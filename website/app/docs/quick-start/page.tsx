@@ -19,12 +19,12 @@ export default async function QuickStartPage() {
     >
       {content}
 
-      <div className="mt-16 pt-8 border-t border-[#1e2730] not-prose">
+      <div className="mt-16 pt-8 border-t border-[var(--border)] not-prose">
         <Link href="/docs/integrations"
-          className="group flex items-center justify-between p-5 rounded-xl border border-[#1e2730] hover:border-teal-DEFAULT/40 bg-[#0d1117] transition-colors max-w-sm">
+          className="group flex items-center justify-between p-5 rounded-lg border border-[var(--border)] hover:border-teal-DEFAULT/40 bg-[var(--bg-elevated)] transition-colors max-w-sm">
           <div>
             <div className="text-xs text-teal-DEFAULT font-semibold mb-1">Next</div>
-            <div className="font-syne font-600 text-white">Connect your AI tool</div>
+            <div className="font-sans font-semibold text-white">Connect your AI tool</div>
             <div className="text-xs text-slate-500 mt-0.5">Claude, Cursor, Aider, and more</div>
           </div>
           <ArrowRight size={16} className="text-slate-600 group-hover:text-teal-DEFAULT transition-colors" />

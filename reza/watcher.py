@@ -219,8 +219,24 @@ def start_watcher(project_dir: str, db: Path):
     observer = Observer()
     observer.schedule(handler, project_dir, recursive=True)
     observer.start()
+    last_adapter_sync = 0.0
     try:
         while observer.is_alive():
+            now = time.time()
+            if now - last_adapter_sync >= 30:
+                last_adapter_sync = now
+                try:
+                    import sqlite3 as _sq
+                    from .adapters import sync_adapters
+
+                    conn = _sq.connect(str(db))
+                    conn.row_factory = _sq.Row
+                    try:
+                        sync_adapters(conn, Path(project_dir))
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    print(f"\n[reza] Conversation sync warning: {e}\n", file=sys.stderr)
             time.sleep(1)
     finally:
         observer.stop()
